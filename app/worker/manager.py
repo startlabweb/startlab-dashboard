@@ -70,14 +70,27 @@ class MonitorWorker:
     async def _poll_loop(self, monitor_id: str):
         from app.worker.processor import process_new_candidates
 
+        # Capture the running event loop BEFORE entering the thread
+        loop = asyncio.get_running_loop()
+
         while True:
             try:
                 monitor = db.get_monitor(monitor_id)
                 if not monitor or monitor["status"] != "active":
                     break
 
+                def emit_from_thread(event: dict):
+                    """Thread-safe callback that schedules event emission on the main loop."""
+                    try:
+                        loop.call_soon_threadsafe(
+                            asyncio.ensure_future,
+                            self._emit_event(monitor_id, event),
+                        )
+                    except Exception:
+                        pass  # SSE is optional, don't break processing
+
                 await asyncio.to_thread(
-                    process_new_candidates, monitor, self._emit_event_sync(monitor_id)
+                    process_new_candidates, monitor, emit_from_thread
                 )
 
                 db.update_monitor(monitor_id, {
@@ -93,14 +106,6 @@ class MonitorWorker:
                 log.error(f"Monitor {monitor_id} error: {e}")
                 db.log_activity(monitor_id, "error", f"Error en polling: {e}")
                 await asyncio.sleep(60)
-
-    def _emit_event_sync(self, monitor_id: str):
-        """Returns a sync callback that schedules event emission."""
-        def callback(event: dict):
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.ensure_future(self._emit_event(monitor_id, event))
-        return callback
 
 
 worker_manager = MonitorWorker()
