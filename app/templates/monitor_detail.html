@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+{% block title %}Monitor — StartLab{% endblock %}
+{% block content %}
+<div id="monitor-page" data-monitor-id="{{ monitor_id }}">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6" id="monitor-header">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900" id="monitor-title">Cargando...</h1>
+            <p class="text-xs text-gray-500 font-mono" id="monitor-sheet-id"></p>
+        </div>
+        <div class="flex items-center space-x-3">
+            <span id="cost-badge" class="text-sm text-gray-500"></span>
+            <span id="status-badge" class="text-xs font-medium px-2.5 py-0.5 rounded-full"></span>
+            <button id="toggle-btn" onclick="toggleMonitor()" class="px-4 py-2 rounded-md text-sm font-medium"></button>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-gray-200 mb-4">
+        <nav class="flex space-x-8">
+            <button onclick="showTab('candidates')" class="tab-btn border-b-2 border-blue-500 text-blue-600 pb-3 text-sm font-medium" data-tab="candidates">Candidatos</button>
+            <button onclick="showTab('activity')" class="tab-btn border-b-2 border-transparent text-gray-500 pb-3 text-sm font-medium hover:text-gray-700" data-tab="activity">Actividad</button>
+            <button onclick="showTab('stats')" class="tab-btn border-b-2 border-transparent text-gray-500 pb-3 text-sm font-medium hover:text-gray-700" data-tab="stats">Estadisticas</button>
+        </nav>
+    </div>
+
+    <!-- Tab: Candidates -->
+    <div id="tab-candidates" class="tab-content">
+        <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fila</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Escritas</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Video</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="candidates-body" class="bg-white divide-y divide-gray-200">
+                    <tr><td colspan="7" class="px-4 py-8 text-center text-gray-400">Cargando candidatos...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Tab: Activity -->
+    <div id="tab-activity" class="tab-content hidden">
+        <div class="bg-white rounded-lg border border-gray-200 p-4">
+            <div id="activity-feed" class="space-y-2 max-h-96 overflow-y-auto font-mono text-xs"></div>
+        </div>
+    </div>
+
+    <!-- Tab: Stats -->
+    <div id="tab-stats" class="tab-content hidden">
+        <div class="grid grid-cols-4 gap-4" id="stats-grid">
+            <div class="bg-white rounded-lg border border-gray-200 p-4">
+                <p class="text-xs text-gray-500">Total</p>
+                <p class="text-2xl font-bold" id="stat-total">—</p>
+            </div>
+            <div class="bg-white rounded-lg border border-gray-200 p-4">
+                <p class="text-xs text-gray-500">Completados</p>
+                <p class="text-2xl font-bold text-green-600" id="stat-completed">—</p>
+            </div>
+            <div class="bg-white rounded-lg border border-gray-200 p-4">
+                <p class="text-xs text-gray-500">Pendientes</p>
+                <p class="text-2xl font-bold text-yellow-600" id="stat-pending">—</p>
+            </div>
+            <div class="bg-white rounded-lg border border-gray-200 p-4">
+                <p class="text-xs text-gray-500">Costo Total</p>
+                <p class="text-2xl font-bold text-gray-600" id="stat-cost">—</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Candidate detail modal -->
+    <div id="candidate-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+        <div class="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold" id="modal-title"></h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+            <div id="modal-content"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const monitorId = '{{ monitor_id }}';
+let monitorData = null;
+
+// Load monitor data
+async function loadMonitor() {
+    const res = await fetch(`/api/monitors/${monitorId}`);
+    monitorData = await res.json();
+    renderHeader();
+    loadCandidates();
+    loadActivity();
+}
+
+function renderHeader() {
+    const m = monitorData;
+    document.getElementById('monitor-title').textContent = m.sheet_title || 'Monitor';
+    document.getElementById('monitor-sheet-id').textContent = m.sheet_id;
+    document.getElementById('cost-badge').textContent = `$${parseFloat(m.total_cost_usd || 0).toFixed(2)}`;
+
+    const badge = document.getElementById('status-badge');
+    const btn = document.getElementById('toggle-btn');
+
+    if (m.status === 'active') {
+        badge.className = 'text-xs font-medium px-2.5 py-0.5 rounded-full bg-green-100 text-green-800';
+        badge.innerHTML = '<span class="inline-block w-2 h-2 rounded-full bg-green-500 mr-1 pulse-dot"></span>Activo';
+        btn.textContent = 'Pausar';
+        btn.className = 'px-4 py-2 rounded-md text-sm font-medium bg-yellow-100 text-yellow-800 hover:bg-yellow-200';
+    } else {
+        badge.className = 'text-xs font-medium px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-800';
+        badge.textContent = 'Pausado';
+        btn.textContent = 'Activar';
+        btn.className = 'px-4 py-2 rounded-md text-sm font-medium bg-green-600 text-white hover:bg-green-700';
+    }
+
+    // Stats
+    const c = m.counts || {};
+    document.getElementById('stat-total').textContent = c.total || 0;
+    document.getElementById('stat-completed').textContent = c.completed || 0;
+    document.getElementById('stat-pending').textContent = c.pending || 0;
+    document.getElementById('stat-cost').textContent = `$${parseFloat(m.total_cost_usd || 0).toFixed(2)}`;
+}
+
+async function toggleMonitor() {
+    const action = monitorData.status === 'active' ? 'stop' : 'start';
+    try {
+        const res = await fetch(`/api/monitors/${monitorId}/${action}`, {method: 'POST'});
+        if (!res.ok) {
+            const data = await res.json();
+            alert(data.detail || 'Error');
+            return;
+        }
+        loadMonitor();
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+async function loadCandidates() {
+    const res = await fetch(`/api/monitors/${monitorId}/candidates`);
+    const data = await res.json();
+    const tbody = document.getElementById('candidates-body');
+
+    if (!data.candidates || data.candidates.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-gray-400">Sin candidatos aun</td></tr>';
+        return;
+    }
+
+    const statusPill = (status) => {
+        const colors = {
+            completed: 'bg-green-100 text-green-700',
+            processing: 'bg-blue-100 text-blue-700',
+            pending: 'bg-gray-100 text-gray-600',
+            error: 'bg-red-100 text-red-700',
+            no_video: 'bg-yellow-100 text-yellow-700',
+        };
+        return `<span class="text-xs px-2 py-0.5 rounded-full ${colors[status] || colors.pending}">${status}</span>`;
+    };
+
+    let html = '';
+    data.candidates.forEach(c => {
+        const overallStatus = (c.written_status === 'error' || c.video_status === 'error') ? 'error' :
+            (c.written_status === 'processing' || c.video_status === 'processing') ? 'processing' :
+            (c.written_status === 'completed' && (c.video_status === 'completed' || c.video_status === 'no_video')) ? 'completed' : 'pending';
+
+        const ws = c.written_score != null ? c.written_score : '—';
+        const vs = c.video_status === 'no_video' ? 'N/A' : (c.video_score != null ? c.video_score : '—');
+        const canRetry = c.written_status === 'error' || c.video_status === 'error';
+
+        html += `<tr class="hover:bg-gray-50 cursor-pointer" onclick="showCandidate('${c.id}')">
+            <td class="px-4 py-3 text-sm text-gray-500">${c.sheet_row}</td>
+            <td class="px-4 py-3 text-sm font-medium text-gray-900">${c.name || '—'}</td>
+            <td class="px-4 py-3 text-sm text-gray-500">${c.email || '—'}</td>
+            <td class="px-4 py-3 text-sm">${ws}</td>
+            <td class="px-4 py-3 text-sm">${vs}</td>
+            <td class="px-4 py-3">${statusPill(overallStatus)}</td>
+            <td class="px-4 py-3">${canRetry ? `<button onclick="event.stopPropagation(); retryCandidate('${c.id}')" class="text-xs text-blue-600 hover:underline">Reintentar</button>` : ''}</td>
+        </tr>`;
+    });
+    tbody.innerHTML = html;
+}
+
+async function loadActivity() {
+    const res = await fetch(`/api/monitors/${monitorId}/candidates`);
+    // We'll use activity_log endpoint when available
+    // For now, show a placeholder
+    const feed = document.getElementById('activity-feed');
+
+    // Set up SSE for real-time updates
+    if (monitorData && monitorData.status === 'active') {
+        const evtSource = new EventSource(`/api/monitors/${monitorId}/events`);
+        evtSource.onmessage = function(e) {
+            const event = JSON.parse(e.data);
+            const time = new Date().toLocaleTimeString('es', {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+            const msg = formatEvent(event);
+            feed.innerHTML = `<div class="text-gray-600 fade-in">[${time}] ${msg}</div>` + feed.innerHTML;
+            // Also refresh candidates table
+            loadCandidates();
+        };
+    }
+}
+
+function formatEvent(e) {
+    switch(e.type) {
+        case 'new_candidate': return `<span class="text-blue-600">Nueva respuesta: ${e.name} (fila ${e.row})</span>`;
+        case 'processing': return `Procesando ${e.phase}: ${e.name}...`;
+        case 'downloaded': return `Video descargado: ${e.name}`;
+        case 'transcribed': return `Transcripcion completa: ${e.name} (${e.duration}s)`;
+        case 'written_complete': return `<span class="text-green-600">Escritas: ${e.name} — ${e.score}/${e.total}</span>`;
+        case 'video_complete': return `<span class="text-green-600">Video: ${e.name} — ${e.score}/${e.total} ($${e.cost})</span>`;
+        case 'error': return `<span class="text-red-600">Error (${e.phase}): ${e.name} — ${e.error}</span>`;
+        default: return JSON.stringify(e);
+    }
+}
+
+async function showCandidate(id) {
+    const res = await fetch(`/api/monitors/${monitorId}/candidates/${id}`);
+    const c = await res.json();
+
+    document.getElementById('modal-title').textContent = c.name || 'Candidato';
+    let html = `<div class="space-y-4">`;
+
+    // Written evaluation
+    html += `<div class="border rounded-md p-3">
+        <h4 class="font-medium text-sm mb-2">Evaluacion Escritas</h4>
+        <p class="text-lg font-bold">${c.written_score != null ? c.written_score + ' pts' : 'Pendiente'}</p>
+        <p class="text-sm text-gray-600 mt-1">${c.written_explanation || ''}</p>`;
+    if (c.written_breakdown) {
+        html += '<div class="mt-2 text-xs text-gray-500">';
+        Object.entries(c.written_breakdown).forEach(([k, v]) => {
+            if (k.includes('reason') || k.includes('razon')) {
+                html += `<p class="mt-1">${v}</p>`;
+            }
+        });
+        html += '</div>';
+    }
+    html += '</div>';
+
+    // Video evaluation
+    html += `<div class="border rounded-md p-3">
+        <h4 class="font-medium text-sm mb-2">Evaluacion Video</h4>`;
+    if (c.video_status === 'no_video') {
+        html += '<p class="text-sm text-yellow-600">Sin video</p>';
+    } else {
+        html += `<p class="text-lg font-bold">${c.video_score != null ? c.video_score + ' pts' : 'Pendiente'}</p>
+        <p class="text-sm text-gray-600 mt-1">${c.video_explanation || ''}</p>`;
+        if (c.video_breakdown) {
+            html += '<div class="mt-2 text-xs text-gray-500">';
+            Object.entries(c.video_breakdown).forEach(([k, v]) => {
+                if (k.includes('reason') || k.includes('razon')) {
+                    html += `<p class="mt-1">${v}</p>`;
+                }
+            });
+            html += '</div>';
+        }
+    }
+    html += '</div>';
+
+    // Transcript
+    if (c.transcript) {
+        html += `<div class="border rounded-md p-3">
+            <h4 class="font-medium text-sm mb-2">Transcripcion</h4>
+            <div class="text-xs text-gray-600 max-h-48 overflow-y-auto whitespace-pre-wrap">${c.transcript}</div>
+        </div>`;
+    }
+
+    // Error
+    if (c.error_message) {
+        html += `<div class="bg-red-50 border border-red-200 rounded-md p-3">
+            <p class="text-sm text-red-700">${c.error_message}</p>
+        </div>`;
+    }
+
+    html += '</div>';
+    document.getElementById('modal-content').innerHTML = html;
+    document.getElementById('candidate-modal').classList.remove('hidden');
+}
+
+function closeModal() {
+    document.getElementById('candidate-modal').classList.add('hidden');
+}
+
+async function retryCandidate(id) {
+    await fetch(`/api/monitors/${monitorId}/candidates/${id}/retry`, {method: 'POST'});
+    loadCandidates();
+}
+
+function showTab(name) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(el => {
+        el.classList.replace('border-blue-500', 'border-transparent');
+        el.classList.replace('text-blue-600', 'text-gray-500');
+    });
+    document.getElementById('tab-' + name).classList.remove('hidden');
+    const btn = document.querySelector(`[data-tab="${name}"]`);
+    btn.classList.replace('border-transparent', 'border-blue-500');
+    btn.classList.replace('text-gray-500', 'text-blue-600');
+}
+
+// Keyboard shortcut to close modal
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModal();
+});
+
+// Init
+loadMonitor();
+// Auto-refresh every 30s
+setInterval(loadMonitor, 30000);
+</script>
+{% endblock %}

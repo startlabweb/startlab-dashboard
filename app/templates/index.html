@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}StartLab Dashboard{% endblock %}
+{% block content %}
+<div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Monitores de Evaluacion</h1>
+    <p class="text-sm text-gray-500 mt-1">Cada monitor vigila un Google Sheet y evalua automaticamente nuevas respuestas.</p>
+</div>
+
+<div id="monitors-list" hx-get="/api/monitors" hx-trigger="load" hx-swap="innerHTML">
+    <div class="text-center py-12 text-gray-400">
+        <div class="htmx-indicator">Cargando monitores...</div>
+    </div>
+</div>
+
+<template id="monitors-template">
+    <!-- HTMX will populate this via the API response, rendered client-side -->
+</template>
+
+<script>
+document.body.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.target.id === 'monitors-list') {
+        const data = JSON.parse(evt.detail.xhr.responseText);
+        const container = evt.detail.target;
+
+        if (data.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-16 bg-white rounded-lg border-2 border-dashed border-gray-300">
+                    <p class="text-gray-500 mb-4">No hay monitores configurados</p>
+                    <a href="/monitors/new" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Crear primer monitor</a>
+                </div>`;
+            return;
+        }
+
+        let html = '<div class="grid gap-4">';
+        data.forEach(m => {
+            const statusColors = {
+                active: 'bg-green-100 text-green-800',
+                paused: 'bg-gray-100 text-gray-800',
+                error: 'bg-red-100 text-red-800'
+            };
+            const statusColor = statusColors[m.status] || statusColors.paused;
+            const counts = m.counts || {};
+            const cost = parseFloat(m.total_cost_usd || 0).toFixed(2);
+
+            html += `
+            <a href="/monitors/${m.id}" class="block bg-white rounded-lg border border-gray-200 p-5 hover:border-blue-300 hover:shadow-sm transition-all">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h3 class="font-semibold text-gray-900">${m.sheet_title || 'Sin titulo'}</h3>
+                        <p class="text-xs text-gray-500 mt-0.5 font-mono">${m.sheet_id}</p>
+                    </div>
+                    <span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${statusColor}">${m.status}</span>
+                </div>
+                <div class="mt-4 flex items-center space-x-6 text-sm text-gray-600">
+                    <span>Total: ${counts.total || 0}</span>
+                    <span class="text-green-600">Completados: ${counts.completed || 0}</span>
+                    <span class="text-yellow-600">Pendientes: ${counts.pending || 0}</span>
+                    <span class="text-red-600">Errores: ${counts.error || 0}</span>
+                    <span class="text-gray-400">Costo: $${cost}</span>
+                </div>
+            </a>`;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    }
+});
+</script>
+{% endblock %}
