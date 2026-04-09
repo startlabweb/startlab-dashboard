@@ -2,35 +2,36 @@
 {% block title %}Nuevo Monitor — StartLab{% endblock %}
 {% block content %}
 <div class="max-w-3xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-900 mb-6">Nuevo Monitor</h1>
+    <h1 class="text-2xl font-bold text-white font-display mb-1">Nuevo Monitor</h1>
+    <div class="gold-line w-20 mb-6"></div>
 
     <!-- Step indicator -->
     <div class="flex items-center mb-8" id="steps">
         <div id="step1-indicator" class="flex items-center">
-            <span class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold">1</span>
-            <span class="ml-2 text-sm font-medium text-blue-600">Sheet</span>
+            <span class="w-8 h-8 rounded-full bg-gold text-midnight flex items-center justify-center text-sm font-bold">1</span>
+            <span class="ml-2 text-sm font-medium text-gold">Sheet</span>
         </div>
-        <div class="flex-1 h-px bg-gray-300 mx-4"></div>
+        <div class="flex-1 h-px bg-midnight-border mx-4"></div>
         <div id="step2-indicator" class="flex items-center">
-            <span class="w-8 h-8 rounded-full bg-gray-300 text-gray-600 flex items-center justify-center text-sm font-bold">2</span>
-            <span class="ml-2 text-sm font-medium text-gray-400">Criterios</span>
+            <span class="w-8 h-8 rounded-full bg-midnight-border text-gray-500 flex items-center justify-center text-sm font-bold">2</span>
+            <span class="ml-2 text-sm font-medium text-gray-500">Criterios</span>
         </div>
-        <div class="flex-1 h-px bg-gray-300 mx-4"></div>
+        <div class="flex-1 h-px bg-midnight-border mx-4"></div>
         <div id="step3-indicator" class="flex items-center">
-            <span class="w-8 h-8 rounded-full bg-gray-300 text-gray-600 flex items-center justify-center text-sm font-bold">3</span>
-            <span class="ml-2 text-sm font-medium text-gray-400">Activar</span>
+            <span class="w-8 h-8 rounded-full bg-midnight-border text-gray-500 flex items-center justify-center text-sm font-bold">3</span>
+            <span class="ml-2 text-sm font-medium text-gray-500">Activar</span>
         </div>
     </div>
 
     <!-- STEP 1: Connect Sheet -->
-    <div id="step1" class="bg-white rounded-lg border border-gray-200 p-6">
-        <h2 class="text-lg font-semibold mb-4">Paso 1: Conectar Google Sheet</h2>
+    <div id="step1" class="bg-midnight-card rounded-lg border border-midnight-border p-6">
+        <h2 class="text-lg font-semibold text-white font-display mb-4">Paso 1: Conectar Google Sheet</h2>
         <p class="text-sm text-gray-500 mb-4">Pega la URL del Google Sheet que recibe las respuestas del formulario.</p>
 
         <div class="space-y-4">
-            <input type="url" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/..." class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            <input type="url" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/..." class="w-full bg-midnight border border-midnight-border rounded-md px-3 py-2 text-sm text-white focus:ring-2 focus:ring-gold focus:border-gold placeholder-gray-600">
 
-            <button onclick="previewSheet()" class="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700" id="preview-btn">
+            <button onclick="previewSheet()" class="bg-gold text-midnight font-semibold px-4 py-2 rounded-md text-sm hover:bg-gold-dark transition-colors" id="preview-btn">
                 Preview Sheet
             </button>
 
@@ -38,42 +39,42 @@
         </div>
     </div>
 
-    <!-- STEP 2: Criteria (hidden initially) -->
-    <div id="step2" class="hidden mt-6 bg-white rounded-lg border border-gray-200 p-6">
-        <h2 class="text-lg font-semibold mb-4">Paso 2: Criterios de Evaluacion</h2>
+    <!-- STEP 2: Criteria -->
+    <div id="step2" class="hidden mt-6 bg-midnight-card rounded-lg border border-midnight-border p-6">
+        <h2 class="text-lg font-semibold text-white font-display mb-4">Paso 2: Criterios de Evaluacion</h2>
 
         <!-- Written criteria -->
         <div class="mb-6">
-            <h3 class="font-medium text-gray-700 mb-2">A. Criterios para Preguntas Escritas</h3>
+            <h3 class="font-medium text-gold mb-2">A. Criterios para Preguntas Escritas</h3>
             <p class="text-xs text-gray-500 mb-2">Describe como evaluar las respuestas del formulario. Puede ser informal.</p>
-            <textarea id="written-criteria" rows="6" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" placeholder="Ej: Evaluar cada pregunta del 1-10 basado en profundidad de respuesta, claridad, y experiencia demostrada..."></textarea>
-            <button onclick="parseCriteria('written')" class="mt-2 bg-gray-100 text-gray-700 px-3 py-1.5 rounded-md text-sm hover:bg-gray-200">Analizar criterios escritas</button>
+            <textarea id="written-criteria" rows="6" class="w-full bg-midnight border border-midnight-border rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-gold focus:border-gold" placeholder="Ej: Evaluar cada pregunta del 1-10 basado en profundidad de respuesta, claridad, y experiencia demostrada..."></textarea>
+            <button onclick="parseCriteria('written')" class="mt-2 bg-midnight-light border border-midnight-border text-gray-300 px-3 py-1.5 rounded-md text-sm hover:border-gold hover:text-gold transition-colors">Analizar criterios escritas</button>
             <div id="written-criteria-result" class="mt-3"></div>
         </div>
 
         <!-- Video criteria -->
         <div class="mb-6">
-            <h3 class="font-medium text-gray-700 mb-2">B. Criterios para Video Roleplay</h3>
+            <h3 class="font-medium text-gold mb-2">B. Criterios para Video Roleplay</h3>
             <p class="text-xs text-gray-500 mb-2">Describe la rubrica para evaluar el roleplay + el script de referencia.</p>
-            <textarea id="video-criteria" rows="6" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" placeholder="Ej: Sigue el script a cabalidad - 4pts, Suena natural - 6pts, Profundiza - 8pts, No excede 5min - 2pts..."></textarea>
-            <button onclick="parseCriteria('video')" class="mt-2 bg-gray-100 text-gray-700 px-3 py-1.5 rounded-md text-sm hover:bg-gray-200">Analizar criterios video</button>
+            <textarea id="video-criteria" rows="6" class="w-full bg-midnight border border-midnight-border rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-gold focus:border-gold" placeholder="Ej: Sigue el script a cabalidad - 4pts, Suena natural - 6pts, Profundiza - 8pts, No excede 5min - 2pts..."></textarea>
+            <button onclick="parseCriteria('video')" class="mt-2 bg-midnight-light border border-midnight-border text-gray-300 px-3 py-1.5 rounded-md text-sm hover:border-gold hover:text-gold transition-colors">Analizar criterios video</button>
             <div id="video-criteria-result" class="mt-3"></div>
         </div>
 
-        <button onclick="confirmAllCriteria()" id="confirm-criteria-btn" class="hidden bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700">
+        <button onclick="confirmAllCriteria()" id="confirm-criteria-btn" class="hidden bg-gold text-midnight font-semibold px-4 py-2 rounded-md text-sm hover:bg-gold-dark transition-colors">
             Confirmar Ambos Criterios
         </button>
     </div>
 
-    <!-- STEP 3: Activate (hidden initially) -->
-    <div id="step3" class="hidden mt-6 bg-white rounded-lg border border-gray-200 p-6">
-        <h2 class="text-lg font-semibold mb-4">Paso 3: Revisar y Activar</h2>
-        <div id="summary" class="mb-4 text-sm text-gray-600"></div>
+    <!-- STEP 3: Activate -->
+    <div id="step3" class="hidden mt-6 bg-midnight-card rounded-lg border border-midnight-border p-6">
+        <h2 class="text-lg font-semibold text-white font-display mb-4">Paso 3: Revisar y Activar</h2>
+        <div id="summary" class="mb-4 text-sm text-gray-400"></div>
         <div class="flex space-x-3">
-            <button onclick="activateMonitor()" class="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700">
+            <button onclick="activateMonitor()" class="bg-green-600 text-white font-semibold px-4 py-2 rounded-md text-sm hover:bg-green-700 transition-colors">
                 Activar Monitoreo
             </button>
-            <button onclick="window.location.href='/'" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-md text-sm hover:bg-gray-200">
+            <button onclick="window.location.href='/'" class="bg-midnight-light border border-midnight-border text-gray-300 px-4 py-2 rounded-md text-sm hover:border-gold hover:text-gold transition-colors">
                 Guardar sin activar
             </button>
         </div>
@@ -102,45 +103,43 @@ async function previewSheet() {
         });
         const data = await res.json();
 
-        if (!res.ok) {
-            throw new Error(data.detail || 'Error');
-        }
+        if (!res.ok) throw new Error(data.detail || 'Error');
 
         sheetData = data;
         const preview = document.getElementById('sheet-preview');
         preview.classList.remove('hidden');
 
         let html = `
-            <div class="mt-4 p-4 bg-green-50 border border-green-200 rounded-md fade-in">
-                <p class="font-medium text-green-800">✓ ${data.title}</p>
-                <p class="text-xs text-green-600 mt-1">${data.total_rows} respuestas | Video: ${data.video_column || 'No detectada'}</p>
+            <div class="mt-4 p-4 bg-midnight border border-gold/30 rounded-md fade-in">
+                <p class="font-medium text-gold font-display">${data.title}</p>
+                <p class="text-xs text-gray-500 mt-1">${data.total_rows} respuestas | Video: ${data.video_column ? 'Detectada' : 'No detectada'}</p>
                 <div class="mt-3 overflow-x-auto">
                     <table class="text-xs w-full">
-                        <thead><tr class="bg-green-100">`;
+                        <thead><tr class="border-b border-midnight-border">`;
 
         data.headers.forEach(h => {
             const short = h.length > 25 ? h.substring(0, 25) + '...' : h;
-            html += `<th class="px-2 py-1 text-left font-medium">${short}</th>`;
+            html += `<th class="px-2 py-1 text-left font-medium text-gold/70">${short}</th>`;
         });
 
         html += '</tr></thead><tbody>';
         data.sample_rows.forEach(row => {
-            html += '<tr class="border-t border-green-100">';
+            html += '<tr class="border-t border-midnight-border/50">';
             row.forEach(cell => {
                 const short = cell.length > 30 ? cell.substring(0, 30) + '...' : cell;
-                html += `<td class="px-2 py-1">${short}</td>`;
+                html += `<td class="px-2 py-1 text-gray-400">${short}</td>`;
             });
             html += '</tr>';
         });
 
         html += `</tbody></table></div>
-            <button onclick="createMonitor()" class="mt-3 bg-blue-600 text-white px-3 py-1.5 rounded-md text-sm hover:bg-blue-700">Continuar →</button>
+            <button onclick="createMonitor()" class="mt-3 bg-gold text-midnight font-semibold px-3 py-1.5 rounded-md text-sm hover:bg-gold-dark transition-colors">Continuar</button>
             </div>`;
 
         preview.innerHTML = html;
     } catch (e) {
         document.getElementById('sheet-preview').innerHTML = `
-            <div class="mt-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">${e.message}</div>`;
+            <div class="mt-4 p-3 bg-wine/20 border border-wine rounded-md text-sm text-red-400">${e.message}</div>`;
     } finally {
         btn.textContent = 'Preview Sheet';
         btn.disabled = false;
@@ -161,11 +160,11 @@ async function createMonitor() {
     const monitor = await res.json();
     monitorId = monitor.id;
 
-    // Move to step 2
     document.getElementById('step1').classList.add('opacity-50');
     document.getElementById('step2').classList.remove('hidden');
-    document.getElementById('step2-indicator').querySelector('span').classList.replace('bg-gray-300', 'bg-blue-600');
-    document.getElementById('step2-indicator').querySelector('span').classList.replace('text-gray-600', 'text-white');
+    document.getElementById('step2-indicator').querySelector('span').classList.replace('bg-midnight-border', 'bg-gold');
+    document.getElementById('step2-indicator').querySelector('span').classList.replace('text-gray-500', 'text-midnight');
+    document.getElementById('step2-indicator').querySelectorAll('span')[1].classList.replace('text-gray-500', 'text-gold');
     document.getElementById('step2').scrollIntoView({behavior: 'smooth'});
 }
 
@@ -187,24 +186,24 @@ async function parseCriteria(type) {
 
         if (!res.ok) throw new Error(data.detail || 'Error');
 
-        let html = `<div class="p-4 bg-blue-50 border border-blue-200 rounded-md fade-in">
-            <p class="font-medium text-blue-800 mb-2">Entendi lo siguiente (${data.total_points} pts total):</p>
+        let html = `<div class="p-4 bg-midnight border border-gold/30 rounded-md fade-in">
+            <p class="font-medium text-gold mb-2 font-display">Entendi lo siguiente (${data.total_points} pts total):</p>
             <div class="space-y-2">`;
 
         data.parsed_criteria.forEach((c, i) => {
-            html += `<div class="bg-white p-2 rounded border border-blue-100">
-                <p class="font-medium text-sm">${i+1}. ${c.name} (0-${c.max_points} pts)</p>
-                <p class="text-xs text-gray-600">${c.description || ''}</p>`;
+            html += `<div class="bg-midnight-light p-2 rounded border border-midnight-border">
+                <p class="font-medium text-sm text-white">${i+1}. ${c.name} (0-${c.max_points} pts)</p>
+                <p class="text-xs text-gray-500">${c.description || ''}</p>`;
             if (c.levels) {
                 c.levels.forEach(l => {
-                    html += `<p class="text-xs text-gray-500 ml-2">• ${l.points} pts: ${l.description}</p>`;
+                    html += `<p class="text-xs text-gray-600 ml-2">&bull; ${l.points} pts: ${l.description}</p>`;
                 });
             }
             html += '</div>';
         });
 
         if (data.notes) {
-            html += `<p class="text-xs text-blue-600 mt-2">Notas: ${data.notes}</p>`;
+            html += `<p class="text-xs text-gold/70 mt-2">Notas: ${data.notes}</p>`;
         }
 
         html += '</div></div>';
@@ -217,7 +216,7 @@ async function parseCriteria(type) {
             document.getElementById('confirm-criteria-btn').classList.remove('hidden');
         }
     } catch (e) {
-        resultDiv.innerHTML = `<div class="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">${e.message}</div>`;
+        resultDiv.innerHTML = `<div class="p-3 bg-wine/20 border border-wine rounded-md text-sm text-red-400">${e.message}</div>`;
     }
 }
 
@@ -234,17 +233,17 @@ async function confirmAllCriteria() {
         });
     }
 
-    // Move to step 3
     document.getElementById('step2').classList.add('opacity-50');
     document.getElementById('step3').classList.remove('hidden');
-    document.getElementById('step3-indicator').querySelector('span').classList.replace('bg-gray-300', 'bg-blue-600');
-    document.getElementById('step3-indicator').querySelector('span').classList.replace('text-gray-600', 'text-white');
+    document.getElementById('step3-indicator').querySelector('span').classList.replace('bg-midnight-border', 'bg-gold');
+    document.getElementById('step3-indicator').querySelector('span').classList.replace('text-gray-500', 'text-midnight');
+    document.getElementById('step3-indicator').querySelectorAll('span')[1].classList.replace('text-gray-500', 'text-gold');
 
     document.getElementById('summary').innerHTML = `
-        <p><strong>Sheet:</strong> ${sheetData.title} (${sheetData.total_rows} respuestas)</p>
-        <p><strong>Criterios escritas:</strong> ${writtenParsed ? '✓ Confirmados' : '— No configurados'}</p>
-        <p><strong>Criterios video:</strong> ${videoParsed ? '✓ Confirmados' : '— No configurados (se evaluaran solo escritas)'}</p>
-        <p class="mt-2 text-xs text-gray-400">Costo estimado: ~$${(sheetData.total_rows * 0.17).toFixed(2)} USD</p>`;
+        <p class="text-white"><strong>Sheet:</strong> ${sheetData.title} (${sheetData.total_rows} respuestas)</p>
+        <p class="text-gray-400"><strong class="text-white">Criterios escritas:</strong> ${writtenParsed ? '<span class="text-green-400">Confirmados</span>' : '<span class="text-gray-500">No configurados</span>'}</p>
+        <p class="text-gray-400"><strong class="text-white">Criterios video:</strong> ${videoParsed ? '<span class="text-green-400">Confirmados</span>' : '<span class="text-gray-500">No configurados</span>'}</p>
+        <p class="mt-2 text-xs text-gray-600">Costo estimado: ~$${(sheetData.total_rows * 0.17).toFixed(2)} USD</p>`;
 
     document.getElementById('step3').scrollIntoView({behavior: 'smooth'});
 }

@@ -1,13 +1,37 @@
 <!DOCTYPE html>
-<html lang="es" class="h-full bg-gray-50">
+<html lang="es" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}StartLab Dashboard{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: {
+                    midnight: '#121212',
+                    'midnight-light': '#1E1E1E',
+                    'midnight-card': '#252525',
+                    'midnight-border': '#333333',
+                    gold: '#EAB660',
+                    'gold-dark': '#C09D46',
+                    'gold-light': '#F4C014',
+                    wine: '#670B1A',
+                },
+                fontFamily: {
+                    display: ['"Red Hat Display"', 'sans-serif'],
+                    serif: ['"Source Serif Pro"', 'serif'],
+                },
+            }
+        }
+    }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@300;400;500;600;700;800&family=Source+Serif+Pro:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
     <style>
+        body { font-family: 'Red Hat Display', sans-serif; background: #121212; color: #f5f5f5; }
         .htmx-indicator { display: none; }
         .htmx-request .htmx-indicator { display: inline-block; }
         .htmx-request.htmx-indicator { display: inline-block; }
@@ -15,19 +39,23 @@
         .pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
         .fade-in { animation: fadeIn 0.3s ease-in; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+        .gold-line { height: 2px; background: linear-gradient(90deg, #EAB660, #C09D46); }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1E1E1E; }
+        ::-webkit-scrollbar-thumb { background: #EAB660; border-radius: 3px; }
     </style>
 </head>
 <body class="h-full">
-    <nav class="bg-white border-b border-gray-200">
+    <nav class="border-b border-midnight-border bg-midnight-light">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-14">
                 <div class="flex items-center">
-                    <a href="/" class="text-lg font-bold text-gray-900">StartLab</a>
+                    <a href="/" class="text-lg font-bold text-gold font-display tracking-wider">STARTLAB</a>
                     <span class="ml-2 text-sm text-gray-500">Evaluaciones</span>
                 </div>
                 <div class="flex items-center space-x-4">
-                    <a href="/" class="text-sm text-gray-600 hover:text-gray-900">Dashboard</a>
-                    <a href="/monitors/new" class="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700">+ Nuevo Monitor</a>
+                    <a href="/" class="text-sm text-gray-400 hover:text-gold transition-colors">Dashboard</a>
+                    <a href="/monitors/new" class="text-sm bg-gold text-midnight font-semibold px-3 py-1.5 rounded-md hover:bg-gold-dark transition-colors">+ Nuevo Monitor</a>
                 </div>
             </div>
         </div>

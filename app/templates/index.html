@@ -2,19 +2,16 @@
 {% block title %}StartLab Dashboard{% endblock %}
 {% block content %}
 <div class="mb-6">
-    <h1 class="text-2xl font-bold text-gray-900">Monitores de Evaluacion</h1>
-    <p class="text-sm text-gray-500 mt-1">Cada monitor vigila un Google Sheet y evalua automaticamente nuevas respuestas.</p>
+    <h1 class="text-2xl font-bold text-white font-display">Monitores de Evaluacion</h1>
+    <div class="gold-line w-24 mt-2"></div>
+    <p class="text-sm text-gray-500 mt-3">Cada monitor vigila un Google Sheet y evalua automaticamente nuevas respuestas.</p>
 </div>
 
 <div id="monitors-list" hx-get="/api/monitors" hx-trigger="load" hx-swap="innerHTML">
-    <div class="text-center py-12 text-gray-400">
+    <div class="text-center py-12 text-gray-500">
         <div class="htmx-indicator">Cargando monitores...</div>
     </div>
 </div>
-
-<template id="monitors-template">
-    <!-- HTMX will populate this via the API response, rendered client-side -->
-</template>
 
 <script>
 document.body.addEventListener('htmx:afterRequest', function(evt) {
@@ -24,9 +21,9 @@ document.body.addEventListener('htmx:afterRequest', function(evt) {
 
         if (data.length === 0) {
             container.innerHTML = `
-                <div class="text-center py-16 bg-white rounded-lg border-2 border-dashed border-gray-300">
+                <div class="text-center py-16 bg-midnight-card rounded-lg border-2 border-dashed border-midnight-border">
                     <p class="text-gray-500 mb-4">No hay monitores configurados</p>
-                    <a href="/monitors/new" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Crear primer monitor</a>
+                    <a href="/monitors/new" class="bg-gold text-midnight font-semibold px-4 py-2 rounded-md hover:bg-gold-dark transition-colors">Crear primer monitor</a>
                 </div>`;
             return;
         }
@@ -34,29 +31,30 @@ document.body.addEventListener('htmx:afterRequest', function(evt) {
         let html = '<div class="grid gap-4">';
         data.forEach(m => {
             const statusColors = {
-                active: 'bg-green-100 text-green-800',
-                paused: 'bg-gray-100 text-gray-800',
-                error: 'bg-red-100 text-red-800'
+                active: 'bg-green-900/40 text-green-400 border border-green-800',
+                paused: 'bg-midnight-card text-gray-400 border border-midnight-border',
+                error: 'bg-red-900/40 text-red-400 border border-red-800'
             };
             const statusColor = statusColors[m.status] || statusColors.paused;
             const counts = m.counts || {};
             const cost = parseFloat(m.total_cost_usd || 0).toFixed(2);
 
             html += `
-            <a href="/monitors/${m.id}" class="block bg-white rounded-lg border border-gray-200 p-5 hover:border-blue-300 hover:shadow-sm transition-all">
+            <a href="/monitors/${m.id}" class="block bg-midnight-card rounded-lg border border-midnight-border p-5 hover:border-gold/50 hover:shadow-lg hover:shadow-gold/5 transition-all">
                 <div class="flex justify-between items-start">
                     <div>
-                        <h3 class="font-semibold text-gray-900">${m.sheet_title || 'Sin titulo'}</h3>
-                        <p class="text-xs text-gray-500 mt-0.5 font-mono">${m.sheet_id}</p>
+                        <h3 class="font-semibold text-white font-display">${m.sheet_title || 'Sin titulo'}</h3>
+                        <p class="text-xs text-gray-600 mt-0.5 font-mono">${m.sheet_id}</p>
                     </div>
                     <span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${statusColor}">${m.status}</span>
                 </div>
-                <div class="mt-4 flex items-center space-x-6 text-sm text-gray-600">
-                    <span>Total: ${counts.total || 0}</span>
-                    <span class="text-green-600">Completados: ${counts.completed || 0}</span>
-                    <span class="text-yellow-600">Pendientes: ${counts.pending || 0}</span>
-                    <span class="text-red-600">Errores: ${counts.error || 0}</span>
-                    <span class="text-gray-400">Costo: $${cost}</span>
+                <div class="gold-line w-full mt-3 opacity-20"></div>
+                <div class="mt-3 flex items-center space-x-6 text-sm">
+                    <span class="text-gray-400">Total: ${counts.total || 0}</span>
+                    <span class="text-green-400">Completados: ${counts.completed || 0}</span>
+                    <span class="text-gold">Pendientes: ${counts.pending || 0}</span>
+                    <span class="text-red-400">Errores: ${counts.error || 0}</span>
+                    <span class="text-gray-600">Costo: $${cost}</span>
                 </div>
             </a>`;
         });
