@@ -6,16 +6,8 @@ from tools.sheet_reader import get_gspread_client
 log = get_logger("sheet_writer")
 
 
-def _col_letter(col_index: int) -> str:
-    result = ""
-    while col_index > 0:
-        col_index, remainder = divmod(col_index - 1, 26)
-        result = chr(65 + remainder) + result
-    return result
-
-
 def _find_column(headers: list[str], name: str) -> int | None:
-    """Find 1-based column index by header name (case-insensitive partial match)."""
+    """Find 1-based column index by header name (case-insensitive exact match)."""
     name_lower = name.lower().strip()
     for i, h in enumerate(headers, 1):
         if h.lower().strip() == name_lower:
@@ -25,6 +17,28 @@ def _find_column(headers: list[str], name: str) -> int | None:
         if name_lower in h.lower().strip():
             return i
     return None
+
+
+def _find_explanation_column(headers: list[str], score_col: int, explanation_name: str) -> int | None:
+    """Find the explanation column that comes AFTER the score column.
+
+    When multiple columns share the same name (e.g. two 'Explicación'),
+    pick the one immediately following the score column.
+    """
+    name_lower = explanation_name.lower().strip()
+    # First try: the column right after the score column
+    if score_col < len(headers):
+        next_header = headers[score_col].lower().strip()  # score_col is 1-based, headers is 0-based
+        if next_header == name_lower or name_lower in next_header:
+            return score_col + 1
+
+    # Fallback: find first match AFTER score_col
+    for i, h in enumerate(headers, 1):
+        if i > score_col and (h.lower().strip() == name_lower or name_lower in h.lower().strip()):
+            return i
+
+    # Last fallback: any match
+    return _find_column(headers, explanation_name)
 
 
 def write_results(
@@ -44,14 +58,19 @@ def write_results(
 
     headers = ws.row_values(1)
     score_col = _find_column(headers, score_column)
-    explanation_col = _find_column(headers, explanation_column)
 
     if not score_col:
         log.error(f"Column '{score_column}' not found in headers: {headers}")
         return
+
+    # Find the explanation column adjacent to the score column
+    explanation_col = _find_explanation_column(headers, score_col, explanation_column)
+
     if not explanation_col:
-        log.error(f"Column '{explanation_column}' not found in headers: {headers}")
+        log.error(f"Column '{explanation_column}' not found after '{score_column}' in headers")
         return
+
+    log.info(f"Writing to score_col={score_col}, explanation_col={explanation_col}")
 
     cells = []
     for r in results:
@@ -60,4 +79,4 @@ def write_results(
         cells.append(gspread.Cell(row=row, col=explanation_col, value=str(r.get("explanation", ""))))
 
     ws.update_cells(cells, value_input_option="USER_ENTERED")
-    log.info(f"Wrote {len(results)} results to columns '{score_column}' and '{explanation_column}'")
+    log.info(f"Wrote {len(results)} results to cols {score_col} and {explanation_col}")
