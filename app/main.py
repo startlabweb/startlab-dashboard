@@ -53,20 +53,16 @@ app.include_router(events.router, prefix="/api/monitors", tags=["events"])
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_home(request: Request):
-    try:
-        return templates.TemplateResponse("index.html", {"request": request})
-    except Exception as e:
-        log.error(f"Error rendering index.html: {e}")
-        return PlainTextResponse(f"Template error: {e}\nTemplates dir: {TEMPLATES_DIR}\nExists: {TEMPLATES_DIR.exists()}\nFiles: {list(TEMPLATES_DIR.glob('*'))}", status_code=500)
+    return templates.TemplateResponse(request=request, name="index.html")
 
 
 @app.get("/monitors/new", response_class=HTMLResponse)
 async def new_monitor_page(request: Request):
-    return templates.TemplateResponse("monitor_new.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="monitor_new.html")
 
 
 @app.get("/monitors/{monitor_id}", response_class=HTMLResponse)
 async def monitor_detail_page(request: Request, monitor_id: str):
     return templates.TemplateResponse(
-        "monitor_detail.html", {"request": request, "monitor_id": monitor_id}
+        request=request, name="monitor_detail.html", context={"monitor_id": monitor_id}
     )
