@@ -154,18 +154,22 @@ def _process_written(monitor, candidate, candidate_id, headers, row_data, email_
             "written_explanation": explanation,
         })
 
-        # Write to sheet
-        write_results(
-            sheet_id=monitor["sheet_id"],
-            results=[{"row_number": sheet_row, "score": score, "explanation": explanation}],
-            worksheet_name=monitor.get("sheet_name", "Form Responses 1"),
-            score_column=monitor.get("written_score_column", "Puntaje Preguntas"),
-            explanation_column=monitor.get("written_explanation_column", "Explicación"),
-        )
-
         record_cost(monitor_id, candidate_id, 0.02)
         db.log_activity(monitor_id, "written_complete", f"{name}: written {score}/{written_criteria['total_points']}")
         emit_event({"type": "written_complete", "name": name, "score": score, "total": written_criteria["total_points"]})
+
+        # Write to sheet (non-blocking — eval is already saved in DB)
+        try:
+            write_results(
+                sheet_id=monitor["sheet_id"],
+                results=[{"row_number": sheet_row, "score": score, "explanation": explanation}],
+                worksheet_name=monitor.get("sheet_name", "Form Responses 1"),
+                score_column=monitor.get("written_score_column", "Puntaje Preguntas"),
+                explanation_column=monitor.get("written_explanation_column", "Explicación"),
+            )
+        except Exception as e:
+            log.warning(f"Could not write written score to sheet row {sheet_row}: {e}")
+            db.log_activity(monitor_id, "sheet_write_error", f"Written score for {name} saved in DB but failed to write to sheet: {e}")
 
     except Exception as e:
         log.error(f"Written eval error row {sheet_row}: {e}")
@@ -239,19 +243,23 @@ def _process_video(monitor, candidate, candidate_id, emit_event):
             "processed_at": datetime.now(timezone.utc).isoformat(),
         })
 
-        # Write to sheet
-        write_results(
-            sheet_id=monitor["sheet_id"],
-            results=[{"row_number": sheet_row, "score": score, "explanation": explanation}],
-            worksheet_name=monitor.get("sheet_name", "Form Responses 1"),
-            score_column=monitor.get("video_score_column", "Puntaje Roleplay"),
-            explanation_column=monitor.get("video_explanation_column", "Explicación"),
-        )
-
         cost = 0.15 + 0.02  # Gemini + GPT
         record_cost(monitor_id, candidate_id, cost)
         db.log_activity(monitor_id, "video_complete", f"{name}: video {score}/{video_criteria['total_points']} — Cost: ${cost:.2f}")
         emit_event({"type": "video_complete", "name": name, "score": score, "total": video_criteria["total_points"], "cost": cost})
+
+        # Write to sheet (non-blocking — eval is already saved in DB)
+        try:
+            write_results(
+                sheet_id=monitor["sheet_id"],
+                results=[{"row_number": sheet_row, "score": score, "explanation": explanation}],
+                worksheet_name=monitor.get("sheet_name", "Form Responses 1"),
+                score_column=monitor.get("video_score_column", "Puntaje Roleplay"),
+                explanation_column=monitor.get("video_explanation_column", "Explicación"),
+            )
+        except Exception as e:
+            log.warning(f"Could not write video score to sheet row {sheet_row}: {e}")
+            db.log_activity(monitor_id, "sheet_write_error", f"Video score for {name} saved in DB but failed to write to sheet: {e}")
 
     except Exception as e:
         log.error(f"Video eval error row {sheet_row}: {e}")
