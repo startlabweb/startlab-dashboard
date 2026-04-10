@@ -172,9 +172,22 @@ def _process_written(monitor, candidate, candidate_id, headers, row_data, email_
             db.log_activity(monitor_id, "sheet_write_error", f"Written score for {name} saved in DB but failed to write to sheet: {e}")
 
     except Exception as e:
-        log.error(f"Written eval error row {sheet_row}: {e}")
-        db.update_candidate(candidate_id, {"written_status": "error", "error_message": str(e)})
-        emit_event({"type": "error", "phase": "written", "name": name, "error": str(e)})
+        error_msg = str(e)
+        log.error(f"Written eval error row {sheet_row}: {error_msg}")
+        db.update_candidate(candidate_id, {"written_status": "error", "error_message": error_msg})
+        emit_event({"type": "error", "phase": "written", "name": name, "error": error_msg})
+
+        # Write error to sheet so it's visible there too
+        try:
+            write_results(
+                sheet_id=monitor["sheet_id"],
+                results=[{"row_number": sheet_row, "score": "Error", "explanation": f"Escritas no evaluadas: {error_msg}"}],
+                worksheet_name=monitor.get("sheet_name", "Form Responses 1"),
+                score_column=monitor.get("written_score_column", "Puntaje Preguntas"),
+                explanation_column=monitor.get("written_explanation_column", "Explicación"),
+            )
+        except Exception:
+            pass  # Best effort
 
 
 def _process_video(monitor, candidate, candidate_id, emit_event):
@@ -262,9 +275,22 @@ def _process_video(monitor, candidate, candidate_id, emit_event):
             db.log_activity(monitor_id, "sheet_write_error", f"Video score for {name} saved in DB but failed to write to sheet: {e}")
 
     except Exception as e:
-        log.error(f"Video eval error row {sheet_row}: {e}")
-        db.update_candidate(candidate_id, {"video_status": "error", "error_message": str(e)})
-        emit_event({"type": "error", "phase": "video", "name": name, "error": str(e)})
+        error_msg = str(e)
+        log.error(f"Video eval error row {sheet_row}: {error_msg}")
+        db.update_candidate(candidate_id, {"video_status": "error", "error_message": error_msg})
+        emit_event({"type": "error", "phase": "video", "name": name, "error": error_msg})
+
+        # Write error to sheet so it's visible there too
+        try:
+            write_results(
+                sheet_id=monitor["sheet_id"],
+                results=[{"row_number": sheet_row, "score": "Error", "explanation": f"Video no evaluado: {error_msg}"}],
+                worksheet_name=monitor.get("sheet_name", "Form Responses 1"),
+                score_column=monitor.get("video_score_column", "Puntaje Roleplay"),
+                explanation_column=monitor.get("video_explanation_column", "Explicación"),
+            )
+        except Exception:
+            pass  # Best effort
 
     finally:
         if local_path and local_path.exists():
