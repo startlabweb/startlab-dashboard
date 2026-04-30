@@ -23,10 +23,11 @@ STATIC_DIR = BASE_DIR / "static"
 async def lifespan(app: FastAPI):
     log.info(f"Templates dir: {TEMPLATES_DIR} (exists: {TEMPLATES_DIR.exists()})")
     log.info(f"Static dir: {STATIC_DIR} (exists: {STATIC_DIR.exists()})")
-    # Startup: restart active monitors
+    # Startup: restart active monitors and launch watchdog
     if settings.SUPABASE_URL:
         try:
             asyncio.create_task(worker_manager.restore_active_monitors())
+            asyncio.create_task(worker_manager._watchdog_loop())
         except Exception as e:
             log.error(f"Error restoring monitors: {e}")
     yield

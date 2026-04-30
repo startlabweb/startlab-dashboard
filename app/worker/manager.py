@@ -104,8 +104,52 @@ class MonitorWorker:
                 raise
             except Exception as e:
                 log.error(f"Monitor {monitor_id} error: {e}")
-                db.log_activity(monitor_id, "error", f"Error en polling: {e}")
+                # Reset the Supabase client singleton — httpx/httpcore connections
+                # can get stuck in invalid states after a transient error, causing
+                # every subsequent call to fail. Forcing a fresh client recovers.
+                db._client = None
+                try:
+                    db.log_activity(monitor_id, "error", f"Error en polling: {e}")
+                except Exception as log_err:
+                    log.error(f"Could not log activity for {monitor_id}: {log_err}")
                 await asyncio.sleep(60)
+
+    async def _watchdog_loop(self, check_interval: int = 300):
+        """Detects polling tasks that died silently and revives them."""
+        while True:
+            try:
+                await asyncio.sleep(check_interval)
+                monitors = db.list_monitors()
+                now = datetime.now(timezone.utc)
+                for m in monitors:
+                    if m.get("status") != "active":
+                        continue
+                    mid = m["id"]
+                    task = self.active_tasks.get(mid)
+                    task_dead = task is None or task.done()
+
+                    last_poll = m.get("last_poll_at")
+                    poll_interval = m.get("poll_interval") or 60
+                    stale = False
+                    if last_poll:
+                        try:
+                            last_dt = datetime.fromisoformat(last_poll.replace("Z", "+00:00"))
+                            stale = (now - last_dt).total_seconds() > poll_interval * 5
+                        except Exception:
+                            pass
+
+                    if task_dead or stale:
+                        log.warning(f"Watchdog: reviving monitor {mid} (task_dead={task_dead}, stale={stale})")
+                        self.active_tasks.pop(mid, None)
+                        try:
+                            await self.start_monitor(mid)
+                        except Exception as e:
+                            log.error(f"Watchdog could not restart {mid}: {e}")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                log.error(f"Watchdog error: {e}")
+                db._client = None
 
 
 worker_manager = MonitorWorker()
