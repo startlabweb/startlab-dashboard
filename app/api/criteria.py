@@ -27,14 +27,25 @@ async def upload_criteria(monitor_id: str, req: CriteriaUploadRequest):
     if req.criteria_type not in ("written", "video"):
         raise HTTPException(status_code=400, detail="criteria_type must be 'written' or 'video'")
 
+    evaluator_type = monitor.get("evaluator_type", "sales")
+    if evaluator_type == "editor" and req.criteria_type == "video":
+        raise HTTPException(
+            status_code=400,
+            detail="Editor evaluators do not support video criteria",
+        )
+
     # Parse with AI
-    parsed = await asyncio.to_thread(parse_criteria, req.raw_text, req.criteria_type)
+    parsed = await asyncio.to_thread(
+        parse_criteria, req.raw_text, req.criteria_type, evaluator_type
+    )
 
     if "error" in parsed:
         raise HTTPException(status_code=400, detail=parsed["error"])
 
     # Generate GPT prompt template
-    prompt_template = generate_evaluation_prompt(parsed["criteria"], parsed["total_points"], req.criteria_type)
+    prompt_template = generate_evaluation_prompt(
+        parsed["criteria"], parsed["total_points"], req.criteria_type, evaluator_type
+    )
 
     # Save to DB
     criteria_data = {
@@ -74,6 +85,10 @@ async def get_criteria(monitor_id: str, criteria_type: str):
 
 @router.post("/{monitor_id}/criteria/{criteria_type}/confirm")
 async def confirm_criteria(monitor_id: str, criteria_type: str, req: CriteriaConfirmRequest):
+    monitor = db.get_monitor(monitor_id)
+    if not monitor:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+
     criteria = db.get_criteria_for_monitor(monitor_id, criteria_type)
     if not criteria:
         raise HTTPException(status_code=404, detail="Criteria not found")
@@ -82,8 +97,11 @@ async def confirm_criteria(monitor_id: str, criteria_type: str, req: CriteriaCon
 
     # If user edited the criteria, regenerate the prompt
     if req.parsed_criteria:
+        evaluator_type = monitor.get("evaluator_type", "sales")
         total = sum(c.get("max_points", 0) for c in req.parsed_criteria)
-        prompt_template = generate_evaluation_prompt(req.parsed_criteria, total, criteria_type)
+        prompt_template = generate_evaluation_prompt(
+            req.parsed_criteria, total, criteria_type, evaluator_type
+        )
         update_data.update({
             "parsed_criteria": req.parsed_criteria,
             "total_points": total,

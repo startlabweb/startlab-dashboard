@@ -39,6 +39,12 @@ document.body.addEventListener('htmx:afterRequest', function(evt) {
             const counts = m.counts || {};
             const cost = parseFloat(m.total_cost_usd || 0).toFixed(2);
 
+            const isEditor = m.evaluator_type === 'editor';
+            const typeColor = isEditor
+                ? 'bg-blue-900/40 text-blue-300 border border-blue-800'
+                : 'bg-gold/10 text-gold border border-gold/30';
+            const typeLabel = isEditor ? 'Editor' : 'Sales';
+
             html += `
             <a href="/monitors/${m.id}" class="block bg-midnight-card rounded-lg border border-midnight-border p-5 hover:border-gold/50 hover:shadow-lg hover:shadow-gold/5 transition-all">
                 <div class="flex justify-between items-start">
@@ -46,7 +52,10 @@ document.body.addEventListener('htmx:afterRequest', function(evt) {
                         <h3 class="font-semibold text-white font-display">${m.sheet_title || 'Sin titulo'}</h3>
                         <p class="text-xs text-gray-600 mt-0.5 font-mono">${m.sheet_id}</p>
                     </div>
-                    <span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${statusColor}">${m.status}</span>
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${typeColor}">${typeLabel}</span>
+                        <span class="text-xs font-medium px-2.5 py-0.5 rounded-full ${statusColor}">${m.status}</span>
+                    </div>
                 </div>
                 <div class="gold-line w-full mt-3 opacity-20"></div>
                 <div class="mt-3 flex items-center space-x-6 text-sm">

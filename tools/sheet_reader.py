@@ -28,7 +28,11 @@ def extract_sheet_id(url: str) -> str | None:
     return m.group(1) if m else None
 
 
-def preview_sheet(sheet_id: str, worksheet_name: str = "Form Responses 1") -> dict:
+def preview_sheet(
+    sheet_id: str,
+    worksheet_name: str = "Form Responses 1",
+    evaluator_type: str = "sales",
+) -> dict:
     """Get sheet metadata + headers + first 3 rows for preview."""
     client = get_gspread_client()
     sheet = client.open_by_key(sheet_id)
@@ -39,15 +43,16 @@ def preview_sheet(sheet_id: str, worksheet_name: str = "Form Responses 1") -> di
     sample_rows = all_values[1:4] if len(all_values) > 1 else []
     total_rows = len(all_values) - 1  # exclude header
 
-    # Auto-detect video column
+    # Auto-detect video column (skip for evaluators that don't use video)
     video_column = None
     video_column_index = None
-    for i, h in enumerate(headers):
-        if "video" in h.lower() or "roleplay" in h.lower() or "enlace" in h.lower() or "link" in h.lower():
-            if "puntaje" not in h.lower() and "score" not in h.lower():
-                video_column = h
-                video_column_index = i
-                break
+    if evaluator_type == "sales":
+        for i, h in enumerate(headers):
+            if "video" in h.lower() or "roleplay" in h.lower() or "enlace" in h.lower() or "link" in h.lower():
+                if "puntaje" not in h.lower() and "score" not in h.lower():
+                    video_column = h
+                    video_column_index = i
+                    break
 
     return {
         "title": sheet.title,

@@ -23,10 +23,26 @@
         </div>
     </div>
 
-    <!-- STEP 1: Connect Sheet -->
+    <!-- STEP 1: Type + Connect Sheet -->
     <div id="step1" class="bg-midnight-card rounded-lg border border-midnight-border p-6">
-        <h2 class="text-lg font-semibold text-white font-display mb-4">Paso 1: Conectar Google Sheet</h2>
-        <p class="text-sm text-gray-500 mb-4">Pega la URL del Google Sheet que recibe las respuestas del formulario.</p>
+        <h2 class="text-lg font-semibold text-white font-display mb-4">Paso 1: Tipo de evaluador y Google Sheet</h2>
+
+        <!-- Evaluator type selector -->
+        <p class="text-sm text-gray-400 mb-2">Tipo de evaluador</p>
+        <div class="grid grid-cols-2 gap-3 mb-5">
+            <button type="button" onclick="selectType('sales')" id="type-sales" class="evaluator-card text-left p-4 rounded-md border border-gold bg-midnight-light">
+                <p class="font-semibold text-gold">Sales (Setter / Closer)</p>
+                <p class="text-xs text-gray-400 mt-1">Respuestas escritas + video roleplay</p>
+                <p class="text-xs text-gray-500 mt-1">~$0.17 / candidato</p>
+            </button>
+            <button type="button" onclick="selectType('editor')" id="type-editor" class="evaluator-card text-left p-4 rounded-md border border-midnight-border bg-midnight">
+                <p class="font-semibold text-gray-300">Editor / Content Manager</p>
+                <p class="text-xs text-gray-500 mt-1">Cuestionario multiple-choice, sin video</p>
+                <p class="text-xs text-gray-500 mt-1">~$0.02 / candidato</p>
+            </button>
+        </div>
+
+        <p class="text-sm text-gray-500 mb-3">Pega la URL del Google Sheet que recibe las respuestas del formulario.</p>
 
         <div class="space-y-4">
             <input type="url" id="sheet-url" placeholder="https://docs.google.com/spreadsheets/d/..." class="w-full bg-midnight border border-midnight-border rounded-md px-3 py-2 text-sm text-white focus:ring-2 focus:ring-gold focus:border-gold placeholder-gray-600">
@@ -45,15 +61,15 @@
 
         <!-- Written criteria -->
         <div class="mb-6">
-            <h3 class="font-medium text-gold mb-2">A. Criterios para Preguntas Escritas</h3>
-            <p class="text-xs text-gray-500 mb-2">Describe como evaluar las respuestas del formulario. Puede ser informal.</p>
+            <h3 class="font-medium text-gold mb-2" id="written-criteria-title">A. Criterios para Preguntas Escritas</h3>
+            <p class="text-xs text-gray-500 mb-2" id="written-criteria-help">Describe como evaluar las respuestas del formulario. Puede ser informal.</p>
             <textarea id="written-criteria" rows="6" class="w-full bg-midnight border border-midnight-border rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-gold focus:border-gold" placeholder="Ej: Evaluar cada pregunta del 1-10 basado en profundidad de respuesta, claridad, y experiencia demostrada..."></textarea>
             <button onclick="parseCriteria('written')" class="mt-2 bg-midnight-light border border-midnight-border text-gray-300 px-3 py-1.5 rounded-md text-sm hover:border-gold hover:text-gold transition-colors">Analizar criterios escritas</button>
             <div id="written-criteria-result" class="mt-3"></div>
         </div>
 
-        <!-- Video criteria -->
-        <div class="mb-6">
+        <!-- Video criteria (sales only) -->
+        <div class="mb-6" id="video-criteria-block">
             <h3 class="font-medium text-gold mb-2">B. Criterios para Video Roleplay</h3>
             <p class="text-xs text-gray-500 mb-2">Describe la rubrica para evaluar el roleplay + el script de referencia.</p>
             <textarea id="video-criteria" rows="6" class="w-full bg-midnight border border-midnight-border rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-gold focus:border-gold" placeholder="Ej: Sigue el script a cabalidad - 4pts, Suena natural - 6pts, Profundiza - 8pts, No excede 5min - 2pts..."></textarea>
@@ -62,7 +78,7 @@
         </div>
 
         <button onclick="confirmAllCriteria()" id="confirm-criteria-btn" class="hidden bg-gold text-midnight font-semibold px-4 py-2 rounded-md text-sm hover:bg-gold-dark transition-colors">
-            Confirmar Ambos Criterios
+            Confirmar Criterios
         </button>
     </div>
 
@@ -86,6 +102,44 @@ let monitorId = null;
 let sheetData = null;
 let writtenParsed = false;
 let videoParsed = false;
+let evaluatorType = 'sales';
+
+function selectType(type) {
+    evaluatorType = type;
+    const sales = document.getElementById('type-sales');
+    const editor = document.getElementById('type-editor');
+    if (type === 'sales') {
+        sales.className = 'evaluator-card text-left p-4 rounded-md border border-gold bg-midnight-light';
+        sales.querySelector('p.font-semibold').className = 'font-semibold text-gold';
+        editor.className = 'evaluator-card text-left p-4 rounded-md border border-midnight-border bg-midnight';
+        editor.querySelector('p.font-semibold').className = 'font-semibold text-gray-300';
+    } else {
+        editor.className = 'evaluator-card text-left p-4 rounded-md border border-gold bg-midnight-light';
+        editor.querySelector('p.font-semibold').className = 'font-semibold text-gold';
+        sales.className = 'evaluator-card text-left p-4 rounded-md border border-midnight-border bg-midnight';
+        sales.querySelector('p.font-semibold').className = 'font-semibold text-gray-300';
+    }
+    applyTypeToCriteriaUi();
+}
+
+function applyTypeToCriteriaUi() {
+    const videoBlock = document.getElementById('video-criteria-block');
+    const writtenTitle = document.getElementById('written-criteria-title');
+    const writtenHelp = document.getElementById('written-criteria-help');
+    const writtenTextarea = document.getElementById('written-criteria');
+
+    if (evaluatorType === 'editor') {
+        videoBlock.classList.add('hidden');
+        writtenTitle.textContent = 'Criterios del Cuestionario';
+        writtenHelp.textContent = 'Pega las preguntas y opciones del formulario con sus puntajes. Usa "DESCARTAR" para opciones que descalifican.';
+        writtenTextarea.placeholder = 'Ej: ¿Disponibilidad? Tiempo completo - 5 pts, Medio tiempo - DESCARTAR. ¿Inglés? Avanzado - 5, Medio - 4, Básico - 3, Ninguno - 0...';
+    } else {
+        videoBlock.classList.remove('hidden');
+        writtenTitle.textContent = 'A. Criterios para Preguntas Escritas';
+        writtenHelp.textContent = 'Describe como evaluar las respuestas del formulario. Puede ser informal.';
+        writtenTextarea.placeholder = 'Ej: Evaluar cada pregunta del 1-10 basado en profundidad de respuesta, claridad, y experiencia demostrada...';
+    }
+}
 
 async function previewSheet() {
     const url = document.getElementById('sheet-url').value;
@@ -99,7 +153,7 @@ async function previewSheet() {
         const res = await fetch('/api/sheets/preview', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({sheet_url: url})
+            body: JSON.stringify({sheet_url: url, evaluator_type: evaluatorType})
         });
         const data = await res.json();
 
@@ -109,10 +163,14 @@ async function previewSheet() {
         const preview = document.getElementById('sheet-preview');
         preview.classList.remove('hidden');
 
+        const videoLine = evaluatorType === 'sales'
+            ? ` | Video: ${data.video_column ? 'Detectada' : 'No detectada'}`
+            : '';
+
         let html = `
             <div class="mt-4 p-4 bg-midnight border border-gold/30 rounded-md fade-in">
                 <p class="font-medium text-gold font-display">${data.title}</p>
-                <p class="text-xs text-gray-500 mt-1">${data.total_rows} respuestas | Video: ${data.video_column ? 'Detectada' : 'No detectada'}</p>
+                <p class="text-xs text-gray-500 mt-1">${data.total_rows} respuestas${videoLine}</p>
                 <div class="mt-3 overflow-x-auto">
                     <table class="text-xs w-full">
                         <thead><tr class="border-b border-midnight-border">`;
@@ -147,21 +205,27 @@ async function previewSheet() {
 }
 
 async function createMonitor() {
+    const body = {
+        sheet_url: document.getElementById('sheet-url').value,
+        sheet_id: sheetData.sheet_id,
+        sheet_title: sheetData.title,
+        evaluator_type: evaluatorType,
+    };
+    if (evaluatorType === 'sales') {
+        body.video_column = sheetData.video_column;
+    }
+
     const res = await fetch('/api/monitors', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            sheet_url: document.getElementById('sheet-url').value,
-            sheet_id: sheetData.sheet_id,
-            sheet_title: sheetData.title,
-            video_column: sheetData.video_column,
-        })
+        body: JSON.stringify(body)
     });
     const monitor = await res.json();
     monitorId = monitor.id;
 
     document.getElementById('step1').classList.add('opacity-50');
     document.getElementById('step2').classList.remove('hidden');
+    applyTypeToCriteriaUi();
     document.getElementById('step2-indicator').querySelector('span').classList.replace('bg-midnight-border', 'bg-gold');
     document.getElementById('step2-indicator').querySelector('span').classList.replace('text-gray-500', 'text-midnight');
     document.getElementById('step2-indicator').querySelectorAll('span')[1].classList.replace('text-gray-500', 'text-gold');
@@ -196,7 +260,8 @@ async function parseCriteria(type) {
                 <p class="text-xs text-gray-500">${c.description || ''}</p>`;
             if (c.levels) {
                 c.levels.forEach(l => {
-                    html += `<p class="text-xs text-gray-600 ml-2">&bull; ${l.points} pts: ${l.description}</p>`;
+                    const disq = l.disqualifies ? ' <span class="text-red-400">[DESCARTA]</span>' : '';
+                    html += `<p class="text-xs text-gray-600 ml-2">&bull; ${l.points} pts: ${l.description}${disq}</p>`;
                 });
             }
             html += '</div>';
@@ -239,12 +304,21 @@ async function confirmAllCriteria() {
     document.getElementById('step3-indicator').querySelector('span').classList.replace('text-gray-500', 'text-midnight');
     document.getElementById('step3-indicator').querySelectorAll('span')[1].classList.replace('text-gray-500', 'text-gold');
 
-    document.getElementById('summary').innerHTML = `
-        <p class="text-white"><strong>Sheet:</strong> ${sheetData.title} (${sheetData.total_rows} respuestas)</p>
-        <p class="text-gray-400"><strong class="text-white">Criterios escritas:</strong> ${writtenParsed ? '<span class="text-green-400">Confirmados</span>' : '<span class="text-gray-500">No configurados</span>'}</p>
-        <p class="text-gray-400"><strong class="text-white">Criterios video:</strong> ${videoParsed ? '<span class="text-green-400">Confirmados</span>' : '<span class="text-gray-500">No configurados</span>'}</p>
-        <p class="mt-2 text-xs text-gray-600">Costo estimado: ~$${(sheetData.total_rows * 0.17).toFixed(2)} USD</p>`;
+    const costPerCandidate = evaluatorType === 'editor' ? 0.02 : 0.17;
+    const typeLabel = evaluatorType === 'editor' ? 'Editor / Content Manager' : 'Sales (Setter / Closer)';
 
+    let summaryHtml = `
+        <p class="text-white"><strong>Tipo:</strong> ${typeLabel}</p>
+        <p class="text-white"><strong>Sheet:</strong> ${sheetData.title} (${sheetData.total_rows} respuestas)</p>
+        <p class="text-gray-400"><strong class="text-white">Criterios escritos:</strong> ${writtenParsed ? '<span class="text-green-400">Confirmados</span>' : '<span class="text-gray-500">No configurados</span>'}</p>`;
+
+    if (evaluatorType === 'sales') {
+        summaryHtml += `<p class="text-gray-400"><strong class="text-white">Criterios video:</strong> ${videoParsed ? '<span class="text-green-400">Confirmados</span>' : '<span class="text-gray-500">No configurados</span>'}</p>`;
+    }
+
+    summaryHtml += `<p class="mt-2 text-xs text-gray-600">Costo estimado: ~$${(sheetData.total_rows * costPerCandidate).toFixed(2)} USD</p>`;
+
+    document.getElementById('summary').innerHTML = summaryHtml;
     document.getElementById('step3').scrollIntoView({behavior: 'smooth'});
 }
 

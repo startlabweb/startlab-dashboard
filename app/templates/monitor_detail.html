@@ -11,6 +11,7 @@
         </div>
         <div class="flex items-center space-x-3">
             <span id="cost-badge" class="text-sm text-gold"></span>
+            <span id="type-badge" class="text-xs font-medium px-2.5 py-0.5 rounded-full"></span>
             <span id="status-badge" class="text-xs font-medium px-2.5 py-0.5 rounded-full"></span>
             <button id="toggle-btn" onclick="toggleMonitor()" class="px-4 py-2 rounded-md text-sm font-semibold transition-colors"></button>
         </div>
@@ -35,13 +36,13 @@
                         <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Nombre</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Email</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Escritas</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Video</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider video-only">Video</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Status</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Acciones</th>
                     </tr>
                 </thead>
                 <tbody id="candidates-body" class="divide-y divide-midnight-border/50">
-                    <tr><td colspan="7" class="px-4 py-8 text-center text-gray-600">Cargando candidatos...</td></tr>
+                    <tr><td id="candidates-loading-cell" colspan="7" class="px-4 py-8 text-center text-gray-600">Cargando candidatos...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -106,6 +107,24 @@ function renderHeader() {
     document.getElementById('monitor-sheet-id').textContent = m.sheet_id;
     document.getElementById('cost-badge').textContent = `$${parseFloat(m.total_cost_usd || 0).toFixed(2)}`;
 
+    // Type badge
+    const typeBadge = document.getElementById('type-badge');
+    const isEditor = m.evaluator_type === 'editor';
+    if (isEditor) {
+        typeBadge.className = 'text-xs font-medium px-2.5 py-0.5 rounded-full bg-blue-900/40 text-blue-300 border border-blue-800';
+        typeBadge.textContent = 'Editor';
+    } else {
+        typeBadge.className = 'text-xs font-medium px-2.5 py-0.5 rounded-full bg-gold/10 text-gold border border-gold/30';
+        typeBadge.textContent = 'Sales';
+    }
+
+    // Hide video column for editor monitors
+    document.querySelectorAll('.video-only').forEach(el => {
+        el.classList.toggle('hidden', isEditor);
+    });
+    const loadingCell = document.getElementById('candidates-loading-cell');
+    if (loadingCell) loadingCell.colSpan = isEditor ? 6 : 7;
+
     const badge = document.getElementById('status-badge');
     const btn = document.getElementById('toggle-btn');
 
@@ -146,8 +165,11 @@ async function loadCandidates() {
     const data = await res.json();
     const tbody = document.getElementById('candidates-body');
 
+    const isEditor = monitorData && monitorData.evaluator_type === 'editor';
+    const colCount = isEditor ? 6 : 7;
+
     if (!data.candidates || data.candidates.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-gray-600">Sin candidatos aun</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${colCount}" class="px-4 py-8 text-center text-gray-600">Sin candidatos aun</td></tr>`;
         return;
     }
 
@@ -171,13 +193,14 @@ async function loadCandidates() {
         const ws = c.written_score != null ? c.written_score : '—';
         const vs = c.video_status === 'no_video' ? 'N/A' : (c.video_score != null ? c.video_score : '—');
         const canRetry = c.written_status === 'error' || c.video_status === 'error';
+        const videoCell = isEditor ? '' : `<td class="px-4 py-3 text-sm text-gold">${vs}</td>`;
 
         html += `<tr class="hover:bg-midnight-light/50 cursor-pointer transition-colors" onclick="showCandidate('${c.id}')">
             <td class="px-4 py-3 text-sm text-gray-500">${c.sheet_row}</td>
             <td class="px-4 py-3 text-sm font-medium text-white">${c.name || '—'}</td>
             <td class="px-4 py-3 text-sm text-gray-500">${c.email || '—'}</td>
             <td class="px-4 py-3 text-sm text-gold">${ws}</td>
-            <td class="px-4 py-3 text-sm text-gold">${vs}</td>
+            ${videoCell}
             <td class="px-4 py-3">${statusPill(overallStatus)}</td>
             <td class="px-4 py-3">${canRetry ? `<button onclick="event.stopPropagation(); retryCandidate('${c.id}')" class="text-xs text-gold hover:text-gold-light transition-colors">Reintentar</button>` : ''}</td>
         </tr>`;
@@ -233,30 +256,34 @@ async function showCandidate(id) {
     }
     html += '</div>';
 
-    // Video
-    html += `<div class="border border-midnight-border rounded-md p-3">
-        <h4 class="font-medium text-sm text-gold mb-2">Evaluacion Video</h4>`;
-    if (c.video_status === 'no_video') {
-        html += '<p class="text-sm text-gold/70">Sin video</p>';
-    } else {
-        html += `<p class="text-lg font-bold text-white font-display">${c.video_score != null ? c.video_score + ' pts' : 'Pendiente'}</p>
-        <p class="text-sm text-gray-400 mt-1">${c.video_explanation || ''}</p>`;
-        if (c.video_breakdown) {
-            html += '<div class="mt-2 text-xs text-gray-500">';
-            Object.entries(c.video_breakdown).forEach(([k, v]) => {
-                if (k.includes('reason') || k.includes('razon')) html += `<p class="mt-1">${v}</p>`;
-            });
-            html += '</div>';
-        }
-    }
-    html += '</div>';
+    const isEditor = monitorData && monitorData.evaluator_type === 'editor';
 
-    // Transcript
-    if (c.transcript) {
+    // Video (only for sales evaluators)
+    if (!isEditor) {
         html += `<div class="border border-midnight-border rounded-md p-3">
-            <h4 class="font-medium text-sm text-gold mb-2">Transcripcion</h4>
-            <div class="text-xs text-gray-500 max-h-48 overflow-y-auto whitespace-pre-wrap">${c.transcript}</div>
-        </div>`;
+            <h4 class="font-medium text-sm text-gold mb-2">Evaluacion Video</h4>`;
+        if (c.video_status === 'no_video') {
+            html += '<p class="text-sm text-gold/70">Sin video</p>';
+        } else {
+            html += `<p class="text-lg font-bold text-white font-display">${c.video_score != null ? c.video_score + ' pts' : 'Pendiente'}</p>
+            <p class="text-sm text-gray-400 mt-1">${c.video_explanation || ''}</p>`;
+            if (c.video_breakdown) {
+                html += '<div class="mt-2 text-xs text-gray-500">';
+                Object.entries(c.video_breakdown).forEach(([k, v]) => {
+                    if (k.includes('reason') || k.includes('razon')) html += `<p class="mt-1">${v}</p>`;
+                });
+                html += '</div>';
+            }
+        }
+        html += '</div>';
+
+        // Transcript
+        if (c.transcript) {
+            html += `<div class="border border-midnight-border rounded-md p-3">
+                <h4 class="font-medium text-sm text-gold mb-2">Transcripcion</h4>
+                <div class="text-xs text-gray-500 max-h-48 overflow-y-auto whitespace-pre-wrap">${c.transcript}</div>
+            </div>`;
+        }
     }
 
     // Error

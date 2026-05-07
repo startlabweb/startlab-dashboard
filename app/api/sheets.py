@@ -1,4 +1,5 @@
 import asyncio
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -10,6 +11,7 @@ router = APIRouter()
 
 class SheetPreviewRequest(BaseModel):
     sheet_url: str
+    evaluator_type: Literal["sales", "editor"] = "sales"
 
 
 @router.post("/preview")
@@ -19,7 +21,9 @@ async def sheet_preview(req: SheetPreviewRequest):
         raise HTTPException(status_code=400, detail="URL de Google Sheet invalida")
 
     try:
-        data = await asyncio.to_thread(preview_sheet, sheet_id)
+        data = await asyncio.to_thread(
+            preview_sheet, sheet_id, "Form Responses 1", req.evaluator_type
+        )
     except Exception as e:
         raise HTTPException(
             status_code=400,

@@ -25,7 +25,8 @@ def process_new_candidates(monitor: dict, emit_event: Callable):
     monitor_id = monitor["id"]
     sheet_id = monitor["sheet_id"]
     sheet_name = monitor.get("sheet_name", "Form Responses 1")
-    video_col_name = monitor.get("video_column", "")
+    evaluator_type = monitor.get("evaluator_type", "sales")
+    video_col_name = monitor.get("video_column", "") or ""
 
     # Read sheet
     headers, data_rows = read_all_rows(sheet_id, sheet_name)
@@ -37,11 +38,12 @@ def process_new_candidates(monitor: dict, emit_event: Callable):
 
     for i, h in enumerate(headers):
         h_lower = h.lower().strip()
-        if video_col_name and video_col_name.lower() in h_lower:
-            video_col_idx = i
-        elif "video" in h_lower or "roleplay" in h_lower or "enlace" in h_lower:
-            if "puntaje" not in h_lower and "score" not in h_lower:
-                video_col_idx = video_col_idx or i
+        if evaluator_type == "sales":
+            if video_col_name and video_col_name.lower() in h_lower:
+                video_col_idx = i
+            elif "video" in h_lower or "roleplay" in h_lower or "enlace" in h_lower:
+                if "puntaje" not in h_lower and "score" not in h_lower:
+                    video_col_idx = video_col_idx or i
         if "name" in h_lower and "last" in h_lower:
             name_col_idx = i
         elif "nombre" in h_lower and "apellido" in h_lower:
@@ -50,6 +52,24 @@ def process_new_candidates(monitor: dict, emit_event: Callable):
             name_col_idx = i
         if "email" in h_lower:
             email_col_idx = i
+
+    # Index of the score/explanation columns the system writes back to —
+    # these must NOT be passed to the LLM as candidate answers.
+    score_col_indexes: set[int] = set()
+    for col_name in (
+        monitor.get("written_score_column"),
+        monitor.get("written_explanation_column"),
+        monitor.get("video_score_column"),
+        monitor.get("video_explanation_column"),
+    ):
+        if not col_name:
+            continue
+        for i, h in enumerate(headers):
+            if h.strip() == col_name.strip():
+                score_col_indexes.add(i)
+                break
+
+    excluded_idxs = {0, email_col_idx, name_col_idx, video_col_idx} | score_col_indexes
 
     # Process each row
     for row_idx, row_data in enumerate(data_rows):
@@ -69,8 +89,14 @@ def process_new_candidates(monitor: dict, emit_event: Callable):
             candidate_id = existing["id"]
         else:
             # Create new candidate record
-            video_url = row_data[video_col_idx] if video_col_idx is not None and video_col_idx < len(row_data) else ""
-            source_type, source_id = detect_video_url(video_url)
+            if evaluator_type == "editor":
+                video_url = ""
+                source_type, source_id = "none", None
+                video_status = "no_video"
+            else:
+                video_url = row_data[video_col_idx] if video_col_idx is not None and video_col_idx < len(row_data) else ""
+                source_type, source_id = detect_video_url(video_url)
+                video_status = "pending" if source_type != "none" else "no_video"
 
             candidate_data = {
                 "monitor_id": monitor_id,
@@ -79,16 +105,14 @@ def process_new_candidates(monitor: dict, emit_event: Callable):
                 "email": row_data[email_col_idx] if email_col_idx is not None and email_col_idx < len(row_data) else "",
                 "video_url": video_url,
                 "video_source": source_type,
-                "video_status": "pending" if source_type != "none" else "no_video",
+                "video_status": video_status,
             }
 
-            # Store written answers
+            # Store written answers (skip timestamp, email, name, video, and score columns)
             written_answers = {}
             for i, h in enumerate(headers):
-                if i < len(row_data) and row_data[i]:
-                    # Skip timestamp, email, name, video, and score columns
-                    if i not in (0, email_col_idx, name_col_idx, video_col_idx):
-                        written_answers[h] = row_data[i]
+                if i < len(row_data) and row_data[i] and i not in excluded_idxs:
+                    written_answers[h] = row_data[i]
             candidate_data["written_answers"] = written_answers
 
             new_candidate = db.create_candidate(candidate_data)
@@ -100,15 +124,16 @@ def process_new_candidates(monitor: dict, emit_event: Callable):
 
         # --- PHASE 1: Written evaluation ---
         if existing.get("written_status") in ("pending", "error"):
-            _process_written(monitor, existing, candidate_id, headers, row_data, email_col_idx, name_col_idx, video_col_idx, emit_event)
+            _process_written(monitor, existing, candidate_id, headers, row_data, excluded_idxs, emit_event)
 
-        # --- PHASE 2: Video evaluation ---
-        candidate = db.get_candidate(candidate_id)  # refresh
-        if candidate.get("video_status") in ("pending", "error"):
-            _process_video(monitor, candidate, candidate_id, emit_event)
+        # --- PHASE 2: Video evaluation (skip entirely for editor monitors) ---
+        if evaluator_type == "sales":
+            candidate = db.get_candidate(candidate_id)  # refresh
+            if candidate.get("video_status") in ("pending", "error"):
+                _process_video(monitor, candidate, candidate_id, emit_event)
 
 
-def _process_written(monitor, candidate, candidate_id, headers, row_data, email_col_idx, name_col_idx, video_col_idx, emit_event):
+def _process_written(monitor, candidate, candidate_id, headers, row_data, excluded_idxs, emit_event):
     """Evaluate written answers."""
     monitor_id = monitor["id"]
     sheet_row = candidate["sheet_row"]
@@ -126,9 +151,8 @@ def _process_written(monitor, candidate, candidate_id, headers, row_data, email_
         answers = candidate.get("written_answers") or {}
         if not answers and row_data:
             for i, h in enumerate(headers):
-                if i < len(row_data) and row_data[i]:
-                    if i not in (0, email_col_idx, name_col_idx, video_col_idx):
-                        answers[h] = row_data[i]
+                if i < len(row_data) and row_data[i] and i not in excluded_idxs:
+                    answers[h] = row_data[i]
 
         result = evaluate_written_answers(
             answers=answers,

@@ -8,7 +8,7 @@ from tools.logger import get_logger
 
 log = get_logger("criteria_parser")
 
-SYSTEM_PROMPT = """You are an expert at parsing evaluation criteria for personnel selection processes.
+SYSTEM_PROMPT_BASE = """You are an expert at parsing evaluation criteria for personnel selection processes.
 The user will provide criteria that may be poorly written, informal, or in any language (Spanish or English).
 
 Parse this into a structured JSON with this exact format:
@@ -35,18 +35,38 @@ Rules:
 - Return ONLY valid JSON, no markdown"""
 
 
-def parse_criteria(raw_text: str, criteria_type: str) -> dict:
+SYSTEM_PROMPT_EDITOR_EXTRA = """
+
+EDITOR / MULTIPLE-CHOICE MODE:
+- The criteria describe a multiple-choice questionnaire where each option has a fixed point value (e.g. "Avanzado - 5 pts, Medio - 4 pts, Básico - 3 pts").
+- Each question becomes ONE criterion. The options become its `levels`.
+- If an option is marked "DESCARTAR" / "DISQUALIFY" / "DESCALIFICAR", encode it as a level with `points: 0` AND add `"disqualifies": true` on that level.
+- max_points for the criterion is the highest numeric option (DESCARTAR options don't raise the cap).
+- If a question has no explicit point values (e.g. "Portfolio link"), set max_points: 0 and skip it as informational."""
+
+
+def parse_criteria(raw_text: str, criteria_type: str, evaluator_type: str = "sales") -> dict:
     """Parse raw criteria text into structured JSON using GPT-4o."""
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-    context = "written form answers" if criteria_type == "written" else "video roleplay performance"
+    if evaluator_type == "editor":
+        context = "a multiple-choice selection questionnaire (editor / content manager role)"
+    elif criteria_type == "written":
+        context = "written form answers"
+    else:
+        context = "video roleplay performance"
+
+    system_prompt = SYSTEM_PROMPT_BASE
+    if evaluator_type == "editor":
+        system_prompt = SYSTEM_PROMPT_BASE + SYSTEM_PROMPT_EDITOR_EXTRA
+
     user_msg = f"Parse the following evaluation criteria for {context}:\n\n---\n{raw_text}\n---"
 
-    log.info(f"Parsing {criteria_type} criteria with GPT-4o...")
+    log.info(f"Parsing {criteria_type} criteria (evaluator={evaluator_type}) with GPT-4o...")
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_msg},
         ],
         response_format={"type": "json_object"},
@@ -70,13 +90,19 @@ def parse_criteria(raw_text: str, criteria_type: str) -> dict:
     return data
 
 
-def generate_evaluation_prompt(criteria: list[dict], total_points: int, criteria_type: str) -> str:
+def generate_evaluation_prompt(
+    criteria: list[dict],
+    total_points: int,
+    criteria_type: str,
+    evaluator_type: str = "sales",
+) -> str:
     """Generate a GPT evaluation prompt from structured criteria."""
 
+    if evaluator_type == "editor":
+        return _generate_editor_prompt(criteria, total_points)
     if criteria_type == "written":
         return _generate_written_prompt(criteria, total_points)
-    else:
-        return _generate_video_prompt(criteria, total_points)
+    return _generate_video_prompt(criteria, total_points)
 
 
 def _generate_written_prompt(criteria: list[dict], total_points: int) -> str:
@@ -110,6 +136,58 @@ def _generate_written_prompt(criteria: list[dict], total_points: int) -> str:
 
 Return ONLY this JSON:
 {{{json_fields}"puntuacion_total": <sum, max {total_points}>, "resumen": "Score: X/{total_points} — <2 sentences about overall performance>"}}"""
+
+    return prompt
+
+
+def _generate_editor_prompt(criteria: list[dict], total_points: int) -> str:
+    """Generate prompt for evaluating multiple-choice editor questionnaires.
+
+    Differences vs the sales/written prompt:
+      - The model maps each answer literally to a predefined option, no intent eval.
+      - DESCARTAR options force descalificado=true and total=0.
+    """
+    criteria_text = ""
+    json_fields = ""
+    has_disqualifying = False
+
+    for i, c in enumerate(criteria, 1):
+        criteria_text += f"\nCRITERIO {i} — {c['name']} (maximo {c['max_points']} puntos):\n"
+        for level in c.get("levels", []):
+            disq = " [DESCARTA]" if level.get("disqualifies") else ""
+            criteria_text += f"- {level['points']} puntos{disq}: {level['description']}\n"
+            if level.get("disqualifies"):
+                has_disqualifying = True
+
+        field_name = f"criterio_{i}"
+        json_fields += f'"{field_name}_score": <0-{c["max_points"]}>, "{field_name}_name": "{c["name"]}", "{field_name}_reason": "<which option matched>", '
+
+    disq_clause = ""
+    if has_disqualifying:
+        disq_clause = (
+            "\n- Si la respuesta del candidato matchea una opción [DESCARTA], "
+            "asigna 0 puntos a ese criterio Y devuelve `descalificado: true` "
+            "Y `puntuacion_total: 0` en el JSON final, sin importar los demás criterios."
+        )
+
+    prompt = f"""Eres un evaluador de un cuestionario de selección. Cada criterio tiene opciones con puntaje fijo. Tu trabajo es MAPEAR la respuesta del candidato a la opción más cercana y asignar el puntaje predefinido. NO evalúes intención ni profundidad — esto es matching literal.
+
+## RESPUESTAS DEL CANDIDATO
+
+{{answers}}
+
+## CRITERIOS DE EVALUACIÓN ({total_points} puntos máximo)
+
+{criteria_text}
+
+## INSTRUCCIONES
+
+- Para cada criterio, identifica cuál de las opciones definidas describe mejor la respuesta del candidato y asigna ese puntaje.
+- Si la respuesta no matchea ninguna opción claramente, asigna 0 y explícalo en el reason.
+- En `*_reason`, di brevemente qué opción matcheó (no evalúes calidad).{disq_clause}
+
+Devuelve ÚNICAMENTE este JSON, sin markdown:
+{{{json_fields}"descalificado": <true|false>, "puntuacion_total": <sum, max {total_points}>, "resumen": "Score: X/{total_points} — <1-2 oraciones>"}}"""
 
     return prompt
 
