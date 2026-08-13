@@ -7,17 +7,70 @@
     <p class="text-sm text-gray-500 mt-3">Cada monitor vigila un Google Sheet y evalua automaticamente nuevas respuestas.</p>
 </div>
 
-<div id="monitors-list" hx-get="/api/monitors" hx-trigger="load" hx-swap="innerHTML">
-    <div class="text-center py-12 text-gray-500">
-        <div class="htmx-indicator">Cargando monitores...</div>
+<div id="monitors-list" hx-get="/api/monitors" hx-trigger="load, recargar-monitores" hx-swap="innerHTML" hx-request='{"timeout": 30000}'>
+    <!-- Skeleton: se ve SIEMPRE mientras carga, no depende de htmx-indicator -->
+    <div class="grid gap-4">
+        <div class="bg-midnight-card rounded-lg border border-midnight-border p-5 animate-pulse">
+            <div class="h-4 bg-midnight-border rounded w-2/5"></div>
+            <div class="h-2.5 bg-midnight-border/60 rounded w-3/5 mt-3"></div>
+            <div class="h-2.5 bg-midnight-border/40 rounded w-4/5 mt-4"></div>
+        </div>
+        <div class="bg-midnight-card rounded-lg border border-midnight-border p-5 animate-pulse">
+            <div class="h-4 bg-midnight-border rounded w-1/3"></div>
+            <div class="h-2.5 bg-midnight-border/60 rounded w-3/5 mt-3"></div>
+            <div class="h-2.5 bg-midnight-border/40 rounded w-4/5 mt-4"></div>
+        </div>
+        <p class="text-center text-xs text-gray-600">Cargando monitores...</p>
     </div>
 </div>
 
 <script>
+function mostrarErrorMonitores(container, detalle) {
+    container.innerHTML = `
+        <div class="text-center py-16 bg-midnight-card rounded-lg border border-red-900/60">
+            <p class="text-red-400 font-semibold mb-1">No se pudieron cargar los monitores</p>
+            <p class="text-xs text-gray-500 mb-4">${detalle}</p>
+            <button id="reintentar-monitores" class="bg-gold text-midnight font-semibold px-4 py-2 rounded-md hover:bg-gold-dark transition-colors">Reintentar</button>
+        </div>`;
+    const boton = container.querySelector('#reintentar-monitores');
+    if (boton) {
+        boton.addEventListener('click', function() {
+            container.innerHTML = '<p class="text-center py-12 text-xs text-gray-600">Cargando monitores...</p>';
+            htmx.trigger(container, 'recargar-monitores');
+        });
+    }
+}
+
+// Si la request falla o se pasa del timeout, antes quedaba la pagina en blanco
+// para siempre (el JSON.parse tiraba excepcion y nadie la agarraba).
+document.body.addEventListener('htmx:timeout', function(evt) {
+    if (evt.detail.target.id === 'monitors-list') {
+        mostrarErrorMonitores(evt.detail.target, 'El servidor tardo mas de 30 segundos en responder.');
+    }
+});
+
+document.body.addEventListener('htmx:sendError', function(evt) {
+    if (evt.detail.target.id === 'monitors-list') {
+        mostrarErrorMonitores(evt.detail.target, 'No hubo conexion con el servidor.');
+    }
+});
+
 document.body.addEventListener('htmx:afterRequest', function(evt) {
     if (evt.detail.target.id === 'monitors-list') {
-        const data = JSON.parse(evt.detail.xhr.responseText);
         const container = evt.detail.target;
+
+        if (!evt.detail.successful) {
+            mostrarErrorMonitores(container, `El servidor respondio ${evt.detail.xhr.status || 'con un error'}.`);
+            return;
+        }
+
+        let data;
+        try {
+            data = JSON.parse(evt.detail.xhr.responseText);
+        } catch (e) {
+            mostrarErrorMonitores(container, 'La respuesta del servidor no se pudo leer.');
+            return;
+        }
 
         if (data.length === 0) {
             container.innerHTML = `

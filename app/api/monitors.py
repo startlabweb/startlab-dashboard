@@ -1,3 +1,4 @@
+import asyncio
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -40,10 +41,14 @@ class CreateMonitorRequest(BaseModel):
 
 @router.get("")
 async def list_monitors():
-    monitors = db.list_monitors()
-    # Add candidate counts
+    # Las llamadas a Supabase son sincronas: van a un thread para no bloquear
+    # el event loop (si no, cada request encola a todas las demas).
+    monitors = await asyncio.to_thread(db.list_monitors)
+    counts = await asyncio.to_thread(
+        db.count_candidates_bulk, [m["id"] for m in monitors]
+    )
     for m in monitors:
-        m["counts"] = db.count_candidates(m["id"])
+        m["counts"] = counts.get(m["id"], {})
     return monitors
 
 
@@ -64,29 +69,38 @@ async def create_monitor(req: CreateMonitorRequest):
         "video_explanation_column": (req.video_explanation_column or defaults["video_explanation_column"]) if req.evaluator_type == "sales" else None,
         "status": "paused",
     }
-    monitor = db.create_monitor(data)
+    monitor = await asyncio.to_thread(db.create_monitor, data)
     return monitor
 
 
 @router.get("/{monitor_id}")
 async def get_monitor(monitor_id: str):
-    monitor = db.get_monitor(monitor_id)
+    monitor = await asyncio.to_thread(db.get_monitor, monitor_id)
     if not monitor:
         raise HTTPException(status_code=404, detail="Monitor not found")
-    monitor["counts"] = db.count_candidates(monitor_id)
-    monitor["written_criteria"] = db.get_criteria_for_monitor(monitor_id, "written")
-    monitor["video_criteria"] = db.get_criteria_for_monitor(monitor_id, "video")
+
+    # Los tres son independientes: van en paralelo en vez de uno tras otro.
+    counts, written, video = await asyncio.gather(
+        asyncio.to_thread(db.count_candidates, monitor_id),
+        asyncio.to_thread(db.get_criteria_for_monitor, monitor_id, "written"),
+        asyncio.to_thread(db.get_criteria_for_monitor, monitor_id, "video"),
+    )
+    monitor["counts"] = counts
+    monitor["written_criteria"] = written
+    monitor["video_criteria"] = video
     return monitor
 
 
 @router.post("/{monitor_id}/start")
 async def start_monitor(monitor_id: str):
-    monitor = db.get_monitor(monitor_id)
+    monitor = await asyncio.to_thread(db.get_monitor, monitor_id)
     if not monitor:
         raise HTTPException(status_code=404, detail="Monitor not found")
 
     # Check criteria are confirmed
-    written_criteria = db.get_criteria_for_monitor(monitor_id, "written")
+    written_criteria = await asyncio.to_thread(
+        db.get_criteria_for_monitor, monitor_id, "written"
+    )
 
     if not written_criteria or not written_criteria.get("confirmed"):
         raise HTTPException(status_code=400, detail="Written criteria not confirmed")
@@ -104,5 +118,5 @@ async def stop_monitor(monitor_id: str):
 @router.delete("/{monitor_id}")
 async def delete_monitor(monitor_id: str):
     await worker_manager.stop_monitor(monitor_id)
-    db.delete_monitor(monitor_id)
+    await asyncio.to_thread(db.delete_monitor, monitor_id)
     return {"deleted": True}

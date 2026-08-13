@@ -115,30 +115,54 @@ def update_candidate(candidate_id: str, data: dict) -> dict:
     return result.data[0] if result.data else {}
 
 
-def count_candidates(monitor_id: str) -> dict:
-    """Returns counts by status."""
+def _counts_vacios() -> dict:
+    return {"total": 0, "completed": 0, "processing": 0, "pending": 0, "error": 0}
+
+
+def _sumar_a_counts(counts: dict, row: dict):
+    """Clasifica una fila de candidato en el bucket que le corresponde."""
+    counts["total"] += 1
+    # Consider completed if written is done (video might be no_video)
+    ws = row.get("written_status", "pending")
+    vs = row.get("video_status", "pending")
+    if ws == "completed" and vs in ("completed", "no_video"):
+        counts["completed"] += 1
+    elif ws == "error" or vs == "error":
+        counts["error"] += 1
+    elif ws == "processing" or vs == "processing":
+        counts["processing"] += 1
+    else:
+        counts["pending"] += 1
+
+
+def count_candidates_bulk(monitor_ids: list[str]) -> dict[str, dict]:
+    """Conteos por status de varios monitores en UNA sola query.
+
+    Antes se hacia una query por monitor (N+1): con 3 monitores eran 3 viajes
+    secuenciales a Supabase y el endpoint tardaba 7-22s.
+    """
+    counts = {mid: _counts_vacios() for mid in monitor_ids}
+    if not monitor_ids:
+        return counts
+
     db = get_db()
     all_rows = (
         db.table("candidates")
-        .select("written_status, video_status")
-        .eq("monitor_id", monitor_id)
+        .select("monitor_id, written_status, video_status")
+        .in_("monitor_id", monitor_ids)
         .execute()
     )
-    counts = {"total": 0, "completed": 0, "processing": 0, "pending": 0, "error": 0}
     for row in all_rows.data:
-        counts["total"] += 1
-        # Consider completed if written is done (video might be no_video)
-        ws = row.get("written_status", "pending")
-        vs = row.get("video_status", "pending")
-        if ws == "completed" and vs in ("completed", "no_video"):
-            counts["completed"] += 1
-        elif ws == "error" or vs == "error":
-            counts["error"] += 1
-        elif ws == "processing" or vs == "processing":
-            counts["processing"] += 1
-        else:
-            counts["pending"] += 1
+        c = counts.get(row.get("monitor_id"))
+        if c is None:
+            continue
+        _sumar_a_counts(c, row)
     return counts
+
+
+def count_candidates(monitor_id: str) -> dict:
+    """Returns counts by status."""
+    return count_candidates_bulk([monitor_id])[monitor_id]
 
 
 # --- Activity Log ---
