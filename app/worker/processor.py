@@ -340,11 +340,31 @@ def _process_video(monitor, candidate, candidate_id, emit_event):
 
         # Transcribir + medir fluidez. Los dos motores devuelven la MISMA
         # estructura, asi que el prompt de scoring y la rubrica no cambian.
+        #
+        # Fallback automatico: en el test de volumen, 1 de los 4 Looms reales
+        # devolvia transcripcion VACIA en AssemblyAI (audio raro) y quemaba sus
+        # 3 intentos hasta quedar en error. Gemini si le sacaba transcripcion.
+        # Si el titular no puede con un audio, se intenta el otro motor en el
+        # MISMO intento, y queda registrado en la actividad.
+        gemini_data = None
         if settings.TRANSCRIBER == "assembly":
             from tools.assembly_transcriber import transcribe as assembly_transcribe
 
-            gemini_data = assembly_transcribe(local_path)
-        else:
+            try:
+                gemini_data = assembly_transcribe(local_path)
+            except Exception as e_asm:
+                log.warning(
+                    f"Row {sheet_row}: AssemblyAI fallo ({str(e_asm)[:120]}); "
+                    f"cayendo a Gemini en el mismo intento"
+                )
+                db.log_activity(
+                    monitor_id,
+                    "fallback_gemini",
+                    f"{name} (fila {sheet_row}): AssemblyAI no pudo con el audio, se uso Gemini",
+                )
+                gemini_data = None
+
+        if gemini_data is None:
             file_uri = upload_to_gemini(local_path)
             gemini_data = evaluate_video(file_uri)
 
