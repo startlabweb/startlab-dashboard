@@ -23,16 +23,42 @@ STATIC_DIR = BASE_DIR / "static"
 async def lifespan(app: FastAPI):
     log.info(f"Templates dir: {TEMPLATES_DIR} (exists: {TEMPLATES_DIR.exists()})")
     log.info(f"Static dir: {STATIC_DIR} (exists: {STATIC_DIR.exists()})")
-    # Startup: restart active monitors and launch watchdog
-    if settings.SUPABASE_URL:
+    # El worker solo arranca si este proceso tiene ese rol. Con ROLE=web el
+    # dashboard no procesa nada, y el worker vive en otro servicio de Railway.
+    corre_worker = settings.ROLE in ("all", "worker")
+
+    if settings.SUPABASE_URL and corre_worker:
         try:
-            asyncio.create_task(worker_manager.restore_active_monitors())
-            asyncio.create_task(worker_manager._watchdog_loop())
+            # Restos de descargas de corridas anteriores. Sin esto, dos o tres
+            # muertes subitas llenan el disco (5 GB en el plan Hobby) y TODOS los
+            # jobs empiezan a fallar por ENOSPC.
+            from tools.loom_downloader import cleanup_tmp_root
+
+            borrados = cleanup_tmp_root()
+            if borrados:
+                log.info(f"Limpieza de temporales: {borrados} restos borrados")
+        except Exception as e:
+            log.warning(f"No se pudo limpiar los temporales: {e}")
+
+        try:
+            # Guardar las referencias: asyncio solo mantiene referencias debiles a
+            # las tasks, asi que una task sin referencia fuerte puede ser
+            # recolectada y cancelada en silencio. El watchdog podia desaparecer.
+            worker_manager._boot_task = asyncio.create_task(
+                worker_manager.restore_active_monitors()
+            )
+            worker_manager._watchdog_task = asyncio.create_task(
+                worker_manager._watchdog_loop()
+            )
         except Exception as e:
             log.error(f"Error restoring monitors: {e}")
+    elif not corre_worker:
+        log.info(f"ROLE={settings.ROLE}: este proceso no procesa candidatos")
+
     yield
     # Shutdown: stop all monitors
-    await worker_manager.stop_all()
+    if corre_worker:
+        await worker_manager.stop_all()
 
 
 app = FastAPI(title="StartLab Dashboard", lifespan=lifespan)

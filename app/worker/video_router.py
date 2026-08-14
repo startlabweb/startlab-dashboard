@@ -1,32 +1,13 @@
-import re
+"""Ruteo de la fuente del video.
 
+Antes habia aca una segunda implementacion de la deteccion, con logica distinta a la
+de `tools/sheet_reader.detect_video_url` — y esa divergencia era un bug: el processor
+usa `detect_video_url` para clasificar y persistir `video_source`, y esta funcion solo
+para re-extraer el file_id de Drive. Dos reglas distintas para la misma URL.
 
-def detect_video_source(url: str | None) -> tuple[str, str | None]:
-    """Detect video source from URL.
+Ahora es un alias: una sola fuente de verdad, sin tocar los call sites.
+"""
 
-    Returns:
-        (source_type, identifier) where source_type is 'google_drive', 'loom', or 'none'
-    """
-    if not url or not url.strip():
-        return ("none", None)
+from tools.sheet_reader import detect_video_url as detect_video_source
 
-    url = url.strip()
-
-    # Google Drive: /d/FILE_ID or id=FILE_ID
-    m = re.search(r"/d/([a-zA-Z0-9_-]+)", url)
-    if m:
-        return ("google_drive", m.group(1))
-    m = re.search(r"id=([a-zA-Z0-9_-]+)", url)
-    if m:
-        return ("google_drive", m.group(1))
-
-    # Loom: loom.com/share/VIDEO_ID
-    m = re.search(r"loom\.com/share/([a-zA-Z0-9]+)", url)
-    if m:
-        return ("loom", url)
-
-    # Unknown URL format — try yt-dlp as fallback
-    if url.startswith("http"):
-        return ("loom", url)  # yt-dlp can handle most video URLs
-
-    return ("none", None)
+__all__ = ["detect_video_source"]

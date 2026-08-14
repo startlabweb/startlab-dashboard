@@ -12,6 +12,15 @@ router = APIRouter()
 class CriteriaUploadRequest(BaseModel):
     raw_text: str
     criteria_type: str  # 'written' or 'video'
+    # Si viene, se guarda TAL CUAL y se saltea el parser de IA.
+    #
+    # Por que existe: el parser tiene como regla explicita "si no se especifican
+    # los puntajes, inferí unos razonables" y "si no hay umbrales, creá cortes
+    # sensatos". Para una rubrica donde los puntos son exactos (2 por pregunta,
+    # 2+1+3 en el desarrollo) eso es inaceptable con 300 candidatos: la IA
+    # inventaria umbrales distintos a los del documento.
+    prompt_template: str | None = None
+    total_points: int | None = None
 
 
 class CriteriaConfirmRequest(BaseModel):
@@ -34,18 +43,33 @@ async def upload_criteria(monitor_id: str, req: CriteriaUploadRequest):
             detail="Editor evaluators do not support video criteria",
         )
 
-    # Parse with AI
-    parsed = await asyncio.to_thread(
-        parse_criteria, req.raw_text, req.criteria_type, evaluator_type
-    )
+    if req.prompt_template:
+        # Prompt fijo: no pasa por el parser, no se le inventa nada.
+        parsed = {
+            "criteria": [
+                {
+                    "name": f"Rubrica fija ({req.criteria_type})",
+                    "description": "Prompt cargado textual, sin parseo de IA",
+                    "max_points": req.total_points or 0,
+                }
+            ],
+            "total_points": req.total_points or 0,
+            "notes": "Prompt fijo: los puntajes son los del documento, sin inferencia.",
+        }
+        prompt_template = req.prompt_template
+    else:
+        # Parse with AI
+        parsed = await asyncio.to_thread(
+            parse_criteria, req.raw_text, req.criteria_type, evaluator_type
+        )
 
-    if "error" in parsed:
-        raise HTTPException(status_code=400, detail=parsed["error"])
+        if "error" in parsed:
+            raise HTTPException(status_code=400, detail=parsed["error"])
 
-    # Generate GPT prompt template
-    prompt_template = generate_evaluation_prompt(
-        parsed["criteria"], parsed["total_points"], req.criteria_type, evaluator_type
-    )
+        # Generate GPT prompt template
+        prompt_template = generate_evaluation_prompt(
+            parsed["criteria"], parsed["total_points"], req.criteria_type, evaluator_type
+        )
 
     # Save to DB
     criteria_data = {

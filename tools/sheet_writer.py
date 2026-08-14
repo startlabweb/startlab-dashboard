@@ -1,7 +1,8 @@
 import gspread
 
+from tools import sheets_limiter as limiter
 from tools.logger import get_logger
-from tools.sheet_reader import get_gspread_client
+from tools.sheet_reader import get_worksheet
 
 log = get_logger("sheet_writer")
 
@@ -52,10 +53,11 @@ def write_results(
     if not results:
         return
 
-    client = get_gspread_client()
-    sheet = client.open_by_key(sheet_id)
-    ws = sheet.worksheet(worksheet_name)
+    # Handle cacheado: antes esto re-autorizaba y volvia a abrir el sheet en cada
+    # llamada, y se la llamaba una vez por candidato por fase.
+    ws = get_worksheet(sheet_id, worksheet_name)
 
+    limiter.acquire(cost=1)
     headers = ws.row_values(1)
     score_col = _find_column(headers, score_column)
 
@@ -78,5 +80,7 @@ def write_results(
         cells.append(gspread.Cell(row=row, col=score_col, value=str(r.get("score", ""))))
         cells.append(gspread.Cell(row=row, col=explanation_col, value=str(r.get("explanation", ""))))
 
+    # Un solo update_cells para TODAS las filas: 600 celdas en 1 request.
+    limiter.acquire(cost=1)
     ws.update_cells(cells, value_input_option="USER_ENTERED")
     log.info(f"Wrote {len(results)} results to cols {score_col} and {explanation_col}")

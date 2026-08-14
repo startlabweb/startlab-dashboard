@@ -5,14 +5,14 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from app import database as db
+from app.config import settings
 from app.services.cost_tracker import record_cost
 from app.worker.video_router import detect_video_source
 from tools.sheet_reader import read_all_rows, detect_video_url
-from tools.sheet_writer import write_results
 from tools.written_evaluator import evaluate_written_answers
 from tools.drive_metadata import get_metadata
 from tools.drive_downloader import download_video
-from tools.loom_downloader import download_loom
+from tools.loom_downloader import cleanup_download, download_loom
 from tools.gemini_uploader import upload_to_gemini
 from tools.gemini_evaluator import evaluate_video
 from tools.gpt_evaluator import evaluate_transcript
@@ -20,18 +20,15 @@ from tools.gpt_evaluator import evaluate_transcript
 log = logging.getLogger("worker.processor")
 
 
-def process_new_candidates(monitor: dict, emit_event: Callable):
-    """Check for new candidates in sheet and process them."""
-    monitor_id = monitor["id"]
-    sheet_id = monitor["sheet_id"]
-    sheet_name = monitor.get("sheet_name", "Form Responses 1")
+def _resolver_columnas(monitor: dict, headers: list[str]) -> dict:
+    """Resuelve los indices de las columnas clave del sheet.
+
+    Es la misma heuristica de siempre, extraida para poder usarla desde el ingest
+    sin arrastrar el resto del procesamiento.
+    """
     evaluator_type = monitor.get("evaluator_type", "sales")
     video_col_name = monitor.get("video_column", "") or ""
 
-    # Read sheet
-    headers, data_rows = read_all_rows(sheet_id, sheet_name)
-
-    # Find key column indexes
     video_col_idx = None
     name_col_idx = None
     email_col_idx = None
@@ -53,9 +50,16 @@ def process_new_candidates(monitor: dict, emit_event: Callable):
         if "email" in h_lower:
             email_col_idx = i
 
-    # Index of the score/explanation columns the system writes back to —
-    # these must NOT be passed to the LLM as candidate answers.
+    # Columnas donde el sistema ESCRIBE. No pueden pasarse al LLM como respuestas
+    # del candidato.
+    #
+    # Antes habia un `break` aca que era un bug: `written_explanation_column` y
+    # `video_explanation_column` valen los dos "Explicacion", asi que las dos
+    # iteraciones encontraban la MISMA primera columna y cortaban. El indice de la
+    # segunda "Explicacion" (la del roleplay) nunca entraba al set, y su texto
+    # podia terminar pasandose a GPT como si fuera una respuesta del candidato.
     score_col_indexes: set[int] = set()
+    ya_usados: set[int] = set()
     for col_name in (
         monitor.get("written_score_column"),
         monitor.get("written_explanation_column"),
@@ -65,72 +69,175 @@ def process_new_candidates(monitor: dict, emit_event: Callable):
         if not col_name:
             continue
         for i, h in enumerate(headers):
-            if h.strip() == col_name.strip():
+            if h.strip() == col_name.strip() and i not in ya_usados:
                 score_col_indexes.add(i)
+                ya_usados.add(i)
                 break
 
     excluded_idxs = {0, email_col_idx, name_col_idx, video_col_idx} | score_col_indexes
 
-    # Process each row
+    return {
+        "video_col_idx": video_col_idx,
+        "name_col_idx": name_col_idx,
+        "email_col_idx": email_col_idx,
+        "excluded_idxs": excluded_idxs,
+    }
+
+
+def ingest_new_rows(monitor: dict, emit_event: Callable) -> dict:
+    """FASE A — descubrir trabajo. Barata, idempotente, sin ninguna llamada a LLM.
+
+    Lee el sheet una vez, pregunta en UNA query que filas ya existen, y hace UN
+    upsert con las nuevas. Antes esto hacia una query de Supabase por fila (300
+    round-trips secuenciales de ~400 ms) y llamaba a `create_candidate` con un
+    insert crudo que, en carrera, tiraba excepcion y abortaba la tanda entera.
+
+    Separar descubrir de procesar es lo que hace que `last_poll_at` vuelva a
+    significar algo: este ciclo tarda segundos, no horas.
+    """
+    monitor_id = monitor["id"]
+    sheet_id = monitor["sheet_id"]
+    sheet_name = monitor.get("sheet_name", "Form Responses 1")
+    evaluator_type = monitor.get("evaluator_type", "sales")
+
+    headers, data_rows = read_all_rows(sheet_id, sheet_name)
+    cols = _resolver_columnas(monitor, headers)
+    video_col_idx = cols["video_col_idx"]
+    name_col_idx = cols["name_col_idx"]
+    email_col_idx = cols["email_col_idx"]
+    excluded_idxs = cols["excluded_idxs"]
+
+    ya_existen = db.existing_sheet_rows(monitor_id)
+
+    nuevos: list[dict] = []
+    email_por_fila: dict[int, str] = {}
+    vacias = 0
+    sin_video = 0
+
+    def celda(row_data: list[str], idx: int | None) -> str:
+        if idx is None or idx >= len(row_data):
+            return ""
+        return row_data[idx]
+
     for row_idx, row_data in enumerate(data_rows):
-        sheet_row = row_idx + 2  # 1-indexed, header is row 1
+        sheet_row = row_idx + 2  # la fila 1 son los encabezados
 
-        # Skip if already in DB
-        existing = db.get_candidate_by_row(monitor_id, sheet_row)
-        if existing:
-            # Skip if already completed or processing
-            ws = existing.get("written_status", "pending")
-            vs = existing.get("video_status", "pending")
-            if ws in ("completed", "processing") and vs in ("completed", "processing", "no_video"):
-                continue
-            # Retry pending/error
-            if ws not in ("pending", "error") and vs not in ("pending", "error"):
-                continue
-            candidate_id = existing["id"]
+        # Filas intermedias vacias: el sheet las devuelve y antes creaban
+        # candidatos basura que despues fallaban.
+        if not any(str(c).strip() for c in row_data):
+            vacias += 1
+            continue
+
+        email_por_fila[sheet_row] = celda(row_data, email_col_idx)
+
+        if sheet_row in ya_existen:
+            continue
+
+        if evaluator_type == "editor":
+            video_url = ""
+            source_type = "none"
+            video_status = "no_video"
         else:
-            # Create new candidate record
-            if evaluator_type == "editor":
-                video_url = ""
-                source_type, source_id = "none", None
-                video_status = "no_video"
-            else:
-                video_url = row_data[video_col_idx] if video_col_idx is not None and video_col_idx < len(row_data) else ""
-                source_type, source_id = detect_video_url(video_url)
-                video_status = "pending" if source_type != "none" else "no_video"
+            video_url = celda(row_data, video_col_idx)
+            source_type, _ = detect_video_url(video_url)
+            video_status = "pending" if source_type != "none" else "no_video"
+            if source_type == "none" and video_url.strip():
+                sin_video += 1
 
-            candidate_data = {
+        respuestas = {
+            h: row_data[i]
+            for i, h in enumerate(headers)
+            if i < len(row_data) and row_data[i] and i not in excluded_idxs
+        }
+
+        nuevos.append(
+            {
                 "monitor_id": monitor_id,
                 "sheet_row": sheet_row,
-                "name": row_data[name_col_idx] if name_col_idx is not None and name_col_idx < len(row_data) else "",
-                "email": row_data[email_col_idx] if email_col_idx is not None and email_col_idx < len(row_data) else "",
+                "name": celda(row_data, name_col_idx),
+                "email": celda(row_data, email_col_idx),
                 "video_url": video_url,
                 "video_source": source_type,
                 "video_status": video_status,
+                "written_answers": respuestas,
             }
+        )
 
-            # Store written answers (skip timestamp, email, name, video, and score columns)
-            written_answers = {}
-            for i, h in enumerate(headers):
-                if i < len(row_data) and row_data[i] and i not in excluded_idxs:
-                    written_answers[h] = row_data[i]
-            candidate_data["written_answers"] = written_answers
+    insertados = db.upsert_candidates(nuevos)
 
-            new_candidate = db.create_candidate(candidate_data)
-            candidate_id = new_candidate["id"]
-            existing = new_candidate
+    if insertados:
+        db.log_activity(
+            monitor_id, "new_response", f"{insertados} respuestas nuevas encoladas"
+        )
+        emit_event({"type": "new_candidate", "count": insertados})
+    if sin_video:
+        log.warning(
+            f"Monitor {monitor_id}: {sin_video} filas con link de video no reconocido"
+        )
 
-            db.log_activity(monitor_id, "new_response", f"New response: {candidate_data['name']} (row {sheet_row})")
-            emit_event({"type": "new_candidate", "name": candidate_data["name"], "row": sheet_row})
+    return {
+        "total_rows": len(data_rows),
+        "new": insertados,
+        "empty_skipped": vacias,
+        "unrecognized_video": sin_video,
+        "headers": headers,
+        "email_by_row": email_por_fila,
+    }
 
-        # --- PHASE 1: Written evaluation ---
-        if existing.get("written_status") in ("pending", "error"):
-            _process_written(monitor, existing, candidate_id, headers, row_data, excluded_idxs, emit_event)
 
-        # --- PHASE 2: Video evaluation (skip entirely for editor monitors) ---
-        if evaluator_type == "sales":
-            candidate = db.get_candidate(candidate_id)  # refresh
-            if candidate.get("video_status") in ("pending", "error"):
-                _process_video(monitor, candidate, candidate_id, emit_event)
+def process_one(monitor: dict, candidate: dict, emit_event: Callable) -> bool:
+    """FASE B — procesar UN candidato ya reclamado por la cola.
+
+    El llamador (el drain loop) ya hizo el claim atomico, asi que aca no hay que
+    volver a chequear si alguien mas lo tiene.
+
+    Returns:
+        True si el candidato quedo en un estado terminal (nada mas que hacer),
+        False si conviene reintentarlo mas adelante.
+    """
+    monitor_id = monitor["id"]
+    candidate_id = candidate["id"]
+    evaluator_type = monitor.get("evaluator_type", "sales")
+
+    # Las respuestas escritas se guardaron en el ingest; no hace falta releer el sheet.
+    headers = list((candidate.get("written_answers") or {}).keys())
+
+    if candidate.get("written_status") in ("pending", "error"):
+        _process_written(
+            monitor, candidate, candidate_id, headers, [], set(), emit_event
+        )
+
+    if evaluator_type == "sales":
+        fresco = db.get_candidate(candidate_id) or candidate
+        if fresco.get("video_status") in ("pending", "error"):
+            _process_video(monitor, fresco, candidate_id, emit_event)
+
+    final = db.get_candidate(candidate_id) or {}
+    ws = final.get("written_status")
+    vs = final.get("video_status")
+    terminal = ws in ("completed",) and vs in ("completed", "no_video")
+    return bool(terminal)
+
+
+def process_new_candidates(monitor: dict, emit_event: Callable):
+    """Compatibilidad: ingesta y despues procesa en serie lo que encuentre.
+
+    El manager nuevo usa `ingest_new_rows` + `process_one` con la cola. Esta
+    funcion queda para no romper ningun call site viejo.
+    """
+    ingest_new_rows(monitor, emit_event)
+    while True:
+        candidato = db.find_claimable(monitor["id"])
+        if not candidato:
+            break
+        reclamado = db.claim_candidate(candidato)
+        if not reclamado:
+            continue
+        ok = False
+        try:
+            ok = process_one(monitor, reclamado, emit_event)
+        finally:
+            db.release_candidate(candidate_id=reclamado["id"], ok=ok, attempts=reclamado.get("attempts", 1))
 
 
 def _process_written(monitor, candidate, candidate_id, headers, row_data, excluded_idxs, emit_event):
@@ -182,18 +289,8 @@ def _process_written(monitor, candidate, candidate_id, headers, row_data, exclud
         db.log_activity(monitor_id, "written_complete", f"{name}: written {score}/{written_criteria['total_points']}")
         emit_event({"type": "written_complete", "name": name, "score": score, "total": written_criteria["total_points"]})
 
-        # Write to sheet (non-blocking — eval is already saved in DB)
-        try:
-            write_results(
-                sheet_id=monitor["sheet_id"],
-                results=[{"row_number": sheet_row, "score": score, "explanation": explanation}],
-                worksheet_name=monitor.get("sheet_name", "Form Responses 1"),
-                score_column=monitor.get("written_score_column", "Puntaje Preguntas"),
-                explanation_column=monitor.get("written_explanation_column", "Explicación"),
-            )
-        except Exception as e:
-            log.warning(f"Could not write written score to sheet row {sheet_row}: {e}")
-            db.log_activity(monitor_id, "sheet_write_error", f"Written score for {name} saved in DB but failed to write to sheet: {e}")
+        # La escritura al Sheet la hace sheet_sync en lote. Escribir aca, una fila
+        # por candidato, era lo que generaba ~2.400 requests y los 429.
 
     except Exception as e:
         error_msg = str(e)
@@ -201,17 +298,9 @@ def _process_written(monitor, candidate, candidate_id, headers, row_data, exclud
         db.update_candidate(candidate_id, {"written_status": "error", "error_message": error_msg})
         emit_event({"type": "error", "phase": "written", "name": name, "error": error_msg})
 
-        # Write error to sheet so it's visible there too
-        try:
-            write_results(
-                sheet_id=monitor["sheet_id"],
-                results=[{"row_number": sheet_row, "score": "Error", "explanation": f"Escritas no evaluadas: {error_msg}"}],
-                worksheet_name=monitor.get("sheet_name", "Form Responses 1"),
-                score_column=monitor.get("written_score_column", "Puntaje Preguntas"),
-                explanation_column=monitor.get("written_explanation_column", "Explicación"),
-            )
-        except Exception:
-            pass  # Best effort
+        # El error tambien lo escribe sheet_sync: escribe "Error: <mensaje>" para
+        # los status 'error'. Que las 300 filas tengan ALGO el martes importa —
+        # una celda vacia es indistinguible de "no se proceso".
 
 
 def _process_video(monitor, candidate, candidate_id, emit_event):
@@ -241,20 +330,37 @@ def _process_video(monitor, candidate, candidate_id, emit_event):
             meta = get_metadata(file_id)
             if not meta.get("accessible"):
                 raise RuntimeError(f"Cannot access video: {meta.get('error', 'unknown')}")
-            extract_audio = meta.get("too_large", False)
             local_path = download_video(file_id, sheet_row, extract_audio=True)
-        else:  # loom or other URL
-            local_path = download_loom(video_url, sheet_row, extract_audio=True)
+        else:  # loom
+            # job_key = candidate_id: el aislamiento real lo da el directorio con
+            # uuid que arma download_loom, esto es para poder rastrearlo en los logs.
+            local_path = download_loom(video_url, candidate_id)
 
         emit_event({"type": "downloaded", "name": name})
 
-        # Upload to Gemini
-        file_uri = upload_to_gemini(local_path)
+        # Transcribir + medir fluidez. Los dos motores devuelven la MISMA
+        # estructura, asi que el prompt de scoring y la rubrica no cambian.
+        if settings.TRANSCRIBER == "assembly":
+            from tools.assembly_transcriber import transcribe as assembly_transcribe
 
-        # Transcribe
-        gemini_data = evaluate_video(file_uri)
+            gemini_data = assembly_transcribe(local_path)
+        else:
+            file_uri = upload_to_gemini(local_path)
+            gemini_data = evaluate_video(file_uri)
+
         if "error" in gemini_data:
-            raise RuntimeError(f"Gemini error: {gemini_data['error']}")
+            raise RuntimeError(f"Error de transcripcion: {gemini_data['error']}")
+
+        # Un transcript vacio NO se puntua. Medido en el ensayo: un audio que
+        # devolvio texto vacio recibio 8/20 con 6/6 en fluidez — mas nota que un
+        # roleplay real. Una nota calculada sobre la nada es peor que un error,
+        # porque parece perfectamente valida en la planilla.
+        transcripcion = (gemini_data.get("text") or "").strip()
+        if len(transcripcion) < 50:
+            raise RuntimeError(
+                f"Transcripcion vacia o demasiado corta ({len(transcripcion)} "
+                f"caracteres): no se puede evaluar el roleplay"
+            )
 
         emit_event({"type": "transcribed", "name": name, "duration": gemini_data.get("duracion_segundos", 0)})
 
@@ -271,6 +377,20 @@ def _process_video(monitor, candidate, candidate_id, emit_event):
         score = gpt_result.get("puntuacion_total", 0)
         explanation = gpt_result.get("resumen", "")
 
+        # Si la transcripcion no es confiable, el aviso tiene que llegar hasta la
+        # planilla: 6 de los 20 puntos (fluidez) se calculan sobre los datos de
+        # Gemini, y si esos datos no son medidos la nota no se puede defender.
+        calidad = gemini_data.get("calidad") or {}
+        if calidad.get("fluidez_estimada") or calidad.get("transcripcion_sospechosa"):
+            motivos = "; ".join(calidad.get("motivos") or ["sin detalle"])
+            explanation = f"⚠ REVISAR A MANO — {motivos}. {explanation}"
+            log.warning(f"Row {sheet_row} marcado para revision: {motivos}")
+            db.log_activity(
+                monitor_id,
+                "revisar_a_mano",
+                f"{name} (fila {sheet_row}): {motivos}",
+            )
+
         db.update_candidate(candidate_id, {
             "video_status": "completed",
             "video_score": score,
@@ -285,18 +405,7 @@ def _process_video(monitor, candidate, candidate_id, emit_event):
         db.log_activity(monitor_id, "video_complete", f"{name}: video {score}/{video_criteria['total_points']} — Cost: ${cost:.2f}")
         emit_event({"type": "video_complete", "name": name, "score": score, "total": video_criteria["total_points"], "cost": cost})
 
-        # Write to sheet (non-blocking — eval is already saved in DB)
-        try:
-            write_results(
-                sheet_id=monitor["sheet_id"],
-                results=[{"row_number": sheet_row, "score": score, "explanation": explanation}],
-                worksheet_name=monitor.get("sheet_name", "Form Responses 1"),
-                score_column=monitor.get("video_score_column", "Puntaje Roleplay"),
-                explanation_column=monitor.get("video_explanation_column", "Explicación"),
-            )
-        except Exception as e:
-            log.warning(f"Could not write video score to sheet row {sheet_row}: {e}")
-            db.log_activity(monitor_id, "sheet_write_error", f"Video score for {name} saved in DB but failed to write to sheet: {e}")
+        # Idem: la escritura la hace sheet_sync en lote.
 
     except Exception as e:
         error_msg = str(e)
@@ -304,18 +413,13 @@ def _process_video(monitor, candidate, candidate_id, emit_event):
         db.update_candidate(candidate_id, {"video_status": "error", "error_message": error_msg})
         emit_event({"type": "error", "phase": "video", "name": name, "error": error_msg})
 
-        # Write error to sheet so it's visible there too
-        try:
-            write_results(
-                sheet_id=monitor["sheet_id"],
-                results=[{"row_number": sheet_row, "score": "Error", "explanation": f"Video no evaluado: {error_msg}"}],
-                worksheet_name=monitor.get("sheet_name", "Form Responses 1"),
-                score_column=monitor.get("video_score_column", "Puntaje Roleplay"),
-                explanation_column=monitor.get("video_explanation_column", "Explicación"),
-            )
-        except Exception:
-            pass  # Best effort
+        # Idem: sheet_sync escribe "Error: <mensaje>" en la fila.
 
     finally:
-        if local_path and local_path.exists():
-            local_path.unlink()
+        # Para Loom borra el directorio de trabajo completo (con uuid), no solo el
+        # archivo: si quedaran restos, se acumulan hasta llenar los 5 GB del plan.
+        if local_path is not None:
+            if video_source == "loom":
+                cleanup_download(local_path)
+            elif local_path.exists():
+                local_path.unlink()
