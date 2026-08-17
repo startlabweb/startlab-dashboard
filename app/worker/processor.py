@@ -86,8 +86,33 @@ def _resolver_columnas(monitor: dict, headers: list[str]) -> dict:
                 ya_usados.add(i)
                 break
 
+    # La transcripcion pegada por el candidato (pregunta que agrego el equipo)
+    # NO es una respuesta escrita: si entrara al prompt de escritas, un texto de
+    # miles de caracteres contaminaria esa nota. El sistema transcribe por su
+    # cuenta desde el audio (medible y no manipulable), asi que esta columna se
+    # excluye del scoring por completo.
+    transcripcion_idxs = {
+        i
+        for i, h in enumerate(headers)
+        if "transcripci" in h.lower() or "transcript" in h.lower()
+    }
+
+    # Todo lo que esta a la derecha del primer puntaje es zona de scoring (las
+    # columnas del sistema + las del equipo: "Role play x2", "Puntaje total",
+    # formulas, etc.). Nunca son respuestas del candidato: Google Forms siempre
+    # mantiene sus preguntas contiguas a la izquierda, asi que este corte es
+    # seguro y cubre columnas que el equipo agregue a futuro.
+    zona_scoring: set[int] = set()
+    if score_col_indexes:
+        primera_score = min(score_col_indexes)
+        zona_scoring = set(range(primera_score, len(headers)))
+
     excluded_idxs = (
-        {0, email_col_idx, name_col_idx} | set(video_col_idxs) | score_col_indexes
+        {0, email_col_idx, name_col_idx}
+        | set(video_col_idxs)
+        | score_col_indexes
+        | transcripcion_idxs
+        | zona_scoring
     )
 
     return {
