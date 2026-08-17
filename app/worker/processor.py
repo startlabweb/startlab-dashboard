@@ -1,6 +1,7 @@
 """Pipeline processor: handles evaluation of new candidates."""
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -29,18 +30,27 @@ def _resolver_columnas(monitor: dict, headers: list[str]) -> dict:
     evaluator_type = monitor.get("evaluator_type", "sales")
     video_col_name = monitor.get("video_column", "") or ""
 
-    video_col_idx = None
+    # Puede haber MAS DE UNA columna de video: la del link (Drive o Loom) y una
+    # eventual de "adjuntar archivo" del Form (que en la planilla aparece como
+    # URL de Drive). Se juntan todas las candidatas; por fila se usa la primera
+    # con contenido. Con una sola columna el comportamiento es el de siempre.
+    video_col_idxs: list[int] = []
     name_col_idx = None
     email_col_idx = None
+
+    PISTAS_VIDEO = ("video", "roleplay", "enlace", "adjunt", "archivo", "sube ", "subí")
 
     for i, h in enumerate(headers):
         h_lower = h.lower().strip()
         if evaluator_type == "sales":
             if video_col_name and video_col_name.lower() in h_lower:
-                video_col_idx = i
-            elif "video" in h_lower or "roleplay" in h_lower or "enlace" in h_lower:
-                if "puntaje" not in h_lower and "score" not in h_lower:
-                    video_col_idx = video_col_idx or i
+                # la columna configurada va primera en la lista
+                if i in video_col_idxs:
+                    video_col_idxs.remove(i)
+                video_col_idxs.insert(0, i)
+            elif any(p in h_lower for p in PISTAS_VIDEO):
+                if "puntaje" not in h_lower and "score" not in h_lower and i not in video_col_idxs:
+                    video_col_idxs.append(i)
         if "name" in h_lower and "last" in h_lower:
             name_col_idx = i
         elif "nombre" in h_lower and "apellido" in h_lower:
@@ -49,6 +59,8 @@ def _resolver_columnas(monitor: dict, headers: list[str]) -> dict:
             name_col_idx = i
         if "email" in h_lower:
             email_col_idx = i
+
+    video_col_idx = video_col_idxs[0] if video_col_idxs else None
 
     # Columnas donde el sistema ESCRIBE. No pueden pasarse al LLM como respuestas
     # del candidato.
@@ -74,10 +86,13 @@ def _resolver_columnas(monitor: dict, headers: list[str]) -> dict:
                 ya_usados.add(i)
                 break
 
-    excluded_idxs = {0, email_col_idx, name_col_idx, video_col_idx} | score_col_indexes
+    excluded_idxs = (
+        {0, email_col_idx, name_col_idx} | set(video_col_idxs) | score_col_indexes
+    )
 
     return {
         "video_col_idx": video_col_idx,
+        "video_col_idxs": video_col_idxs,
         "name_col_idx": name_col_idx,
         "email_col_idx": email_col_idx,
         "excluded_idxs": excluded_idxs,
@@ -106,6 +121,7 @@ def ingest_new_rows(monitor: dict, emit_event: Callable) -> dict:
     name_col_idx = cols["name_col_idx"]
     email_col_idx = cols["email_col_idx"]
     excluded_idxs = cols["excluded_idxs"]
+    video_col_idxs = cols["video_col_idxs"]
 
     ya_existen = db.existing_sheet_rows(monitor_id)
 
@@ -138,10 +154,18 @@ def ingest_new_rows(monitor: dict, emit_event: Callable) -> dict:
             source_type = "none"
             video_status = "no_video"
         else:
-            video_url = celda(row_data, video_col_idx)
+            # Primera columna de video con contenido (link pegado O adjunto del
+            # Form). Si la celda trae varias URLs separadas por coma (adjuntos
+            # multiples), se toma la primera.
+            video_url = ""
+            for idx in video_col_idxs:
+                valor = celda(row_data, idx).strip()
+                if valor:
+                    video_url = valor.split(",")[0].strip()
+                    break
             source_type, _ = detect_video_url(video_url)
             video_status = "pending" if source_type != "none" else "no_video"
-            if source_type == "none" and video_url.strip():
+            if source_type == "none" and video_url:
                 sin_video += 1
 
         respuestas = {
@@ -329,11 +353,23 @@ def _process_video(monitor, candidate, candidate_id, emit_event):
             source_type, file_id = detect_video_source(video_url)
             meta = get_metadata(file_id)
             if not meta.get("accessible"):
-                raise RuntimeError(f"Cannot access video: {meta.get('error', 'unknown')}")
-            local_path = download_video(file_id, sheet_row, extract_audio=True)
+                # Mensaje accionable: es el error mas comun del intake por link
+                # (en la edicion pasada, ~2 de cada 5 links venian sin permiso).
+                raise RuntimeError(
+                    "Video sin acceso: pedirle al candidato que comparta el archivo "
+                    "como 'Cualquier persona con el enlace' (no una carpeta) y usar "
+                    f"Reintentar. Detalle: {meta.get('error', 'desconocido')}"
+                )
+            if meta.get("too_large"):
+                raise RuntimeError(
+                    f"El video pesa {meta.get('size_mb')} MB y el maximo es "
+                    f"{os.environ.get('MAX_VIDEO_SIZE_MB', 500)} MB. Pedirle al "
+                    "candidato que lo comprima o lo re-grabe mas corto, y Reintentar."
+                )
+            local_path = download_video(file_id, candidate_id)
         else:  # loom
             # job_key = candidate_id: el aislamiento real lo da el directorio con
-            # uuid que arma download_loom, esto es para poder rastrearlo en los logs.
+            # uuid del downloader, esto es para poder rastrearlo en los logs.
             local_path = download_loom(video_url, candidate_id)
 
         emit_event({"type": "downloaded", "name": name})
@@ -436,10 +472,7 @@ def _process_video(monitor, candidate, candidate_id, emit_event):
         # Idem: sheet_sync escribe "Error: <mensaje>" en la fila.
 
     finally:
-        # Para Loom borra el directorio de trabajo completo (con uuid), no solo el
-        # archivo: si quedaran restos, se acumulan hasta llenar los 5 GB del plan.
+        # Ambos caminos (Drive y Loom) usan directorios con uuid bajo TMP_ROOT:
+        # se borra el directorio completo. Restos acumulados = disco lleno (5 GB).
         if local_path is not None:
-            if video_source == "loom":
-                cleanup_download(local_path)
-            elif local_path.exists():
-                local_path.unlink()
+            cleanup_download(local_path)
