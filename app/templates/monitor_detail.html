@@ -249,10 +249,10 @@ async function loadCandidates() {
         if (c.total_score != null && corteBeca != null) {
             if (c.total_score >= corteBeca) {
                 tierClass = ' bg-green-900/25';
-                tierBadge = ` <span class="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-green-900/40 text-green-400 border border-green-800">top 5</span>`;
+                tierBadge = ` <span class="ml-1 text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap bg-green-900/40 text-green-400 border border-green-800">top 5</span>`;
             } else if (corteSuplente != null && c.total_score === corteSuplente) {
                 tierClass = ' bg-orange-900/25';
-                tierBadge = ` <span class="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-orange-900/40 text-orange-300 border border-orange-800">suplente</span>`;
+                tierBadge = ` <span class="ml-1 text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap bg-orange-900/40 text-orange-300 border border-orange-800">suplente</span>`;
             }
         }
 
@@ -271,7 +271,7 @@ async function loadCandidates() {
             <td class="px-4 py-3 text-sm text-gray-500">${c.email || '—'}</td>
             <td class="px-4 py-3 text-sm text-gold">${ws}</td>
             ${videoCell}
-            <td class="px-4 py-3 text-sm text-gold font-semibold">${total}${tierBadge}</td>
+            <td class="px-4 py-3 text-sm text-gold font-semibold whitespace-nowrap">${total}${tierBadge}</td>
             <td class="px-4 py-3">${statusPill(overallStatus)}${razonError}</td>
             <td class="px-4 py-3">${canRetry ? `<button onclick="event.stopPropagation(); retryCandidate('${c.id}')" class="text-xs text-gold hover:text-gold-light transition-colors">Reintentar</button>` : ''}</td>
         </tr>`;
