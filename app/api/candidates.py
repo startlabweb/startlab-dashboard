@@ -4,8 +4,23 @@ from fastapi import APIRouter, HTTPException
 
 from app import database as db
 from app.config import settings
+from tools.motivos import razon_sin_video, resumen_error
 
 router = APIRouter()
+
+
+def _anotar_razones(candidate: dict) -> dict:
+    """Agrega los motivos legibles que la UI muestra junto al N/A y al error.
+
+    Se calculan al leer (no se persisten): asi cubren tambien a los candidatos
+    ingeridos antes de este cambio, porque salen de campos que ya se guardaban
+    (`video_url` crudo y `error_message`).
+    """
+    if candidate.get("video_status") == "no_video":
+        candidate["razon_na"] = razon_sin_video(candidate.get("video_url"))
+    if candidate.get("error_message"):
+        candidate["razon_error"] = resumen_error(candidate.get("error_message"))
+    return candidate
 
 # La tabla del dashboard usa 7 campos. Traer select("*") con 300 filas arrastra
 # `transcript` y `written_answers` completos: varios MB por request, cada 30s.
@@ -42,7 +57,7 @@ async def list_candidates(
         status,
     )
     counts = await asyncio.to_thread(db.count_candidates, monitor_id)
-    return {"candidates": candidates, "counts": counts}
+    return {"candidates": [_anotar_razones(c) for c in candidates], "counts": counts}
 
 
 @router.get("/{monitor_id}/progress")
@@ -63,7 +78,7 @@ async def get_candidate(monitor_id: str, candidate_id: str):
     candidate = await asyncio.to_thread(db.get_candidate, candidate_id)
     if not candidate or candidate.get("monitor_id") != monitor_id:
         raise HTTPException(status_code=404, detail="Candidate not found")
-    return candidate
+    return _anotar_razones(candidate)
 
 
 @router.post("/{monitor_id}/candidates/{candidate_id}/retry")

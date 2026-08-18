@@ -16,6 +16,7 @@ alimenta el `sheet_dirty` de /progress.
 
 from app import database as db
 from tools.logger import get_logger
+from tools.motivos import resumen_error as _resumen_corto
 from tools.sheet_writer import write_column, write_results
 
 log = get_logger("sheet_sync")
@@ -33,26 +34,8 @@ def _recortar(texto: object) -> str:
     return s
 
 
-def _resumen_corto(mensaje: object) -> str:
-    """Reduce un error largo a una etiqueta corta para la celda de PUNTAJE.
-
-    Antes esa celda solo decia "Error", y el motivo vivia unicamente en la
-    columna de explicacion de al lado — facil de perder al mirar solo los
-    puntajes en un sheet ancho. Ahora el motivo va tambien en la celda de
-    puntaje; el detalle completo sigue integro en la explicacion.
-    """
-    m = (str(mensaje) if mensaje else "").lower()
-    if "sin acceso" in m or "cannot access" in m:
-        return "sin acceso al video"
-    if "pesa" in m and "mb" in m:
-        return "video muy pesado"
-    if "yt-dlp" in m or "loom" in m or "carpeta" in m:
-        return "link roto o de carpeta"
-    if "timeout" in m or "supero" in m:
-        return "tiempo agotado"
-    if "json" in m or "parsear" in m:
-        return "transcripcion fallida"
-    return "ver explicacion"
+# El motivo corto para la celda de PUNTAJE (_resumen_corto) ahora vive en
+# tools/motivos.py, compartido con la API del dashboard.
 
 
 def sync_completed_to_sheet(

@@ -33,6 +33,8 @@
 
     <!-- Tab: Candidates -->
     <div id="tab-candidates" class="tab-content">
+        <!-- Resumen siempre visible: cuantos llenaron el form y en que estado estan -->
+        <div id="resumen-candidatos" class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-3 text-sm text-gray-400"></div>
         <div class="bg-midnight-card rounded-lg border border-midnight-border overflow-hidden">
             <table class="min-w-full divide-y divide-midnight-border">
                 <thead class="bg-midnight-light">
@@ -173,6 +175,30 @@ async function toggleMonitor() {
     } catch (e) { alert(e.message); }
 }
 
+// El texto de las razones viene del formulario del postulante o de una
+// excepcion: siempre se escapa antes de meterlo al HTML.
+function esc(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Barra de resumen sobre la tabla: la pregunta #1 del equipo es "cuanta gente
+// lleno el form", y no deberia hacer falta ir al tab de estadisticas para verla.
+function renderResumen(counts, candidates) {
+    const el = document.getElementById('resumen-candidatos');
+    if (!el || !counts) return;
+    const sinVideo = (candidates || []).filter(c => c.video_status === 'no_video').length;
+    const enProceso = (counts.pending || 0) + (counts.processing || 0);
+    let html = `<span class="text-xl font-bold text-white font-display">${counts.total || 0}</span>` +
+        `<span class="text-gray-400">aplicantes (forms llenados)</span>`;
+    const partes = [];
+    if (counts.completed) partes.push(`<span class="text-green-400">${counts.completed} completados</span>`);
+    if (counts.error) partes.push(`<span class="text-red-400">${counts.error} con error</span>`);
+    if (sinVideo) partes.push(`<span class="text-gold">${sinVideo} sin video</span>`);
+    if (enProceso) partes.push(`<span class="text-gray-500">${enProceso} en proceso</span>`);
+    if (partes.length) html += `<span class="text-gray-600">·</span>` + partes.join(`<span class="text-gray-600 mx-1">·</span>`);
+    el.innerHTML = html;
+}
+
 async function loadCandidates() {
     const res = await fetch(`/api/monitors/${monitorId}/candidates`);
     const data = await res.json();
@@ -180,6 +206,8 @@ async function loadCandidates() {
 
     const isEditor = monitorData && monitorData.evaluator_type === 'editor';
     const colCount = isEditor ? 7 : 8;
+
+    renderResumen(data.counts, data.candidates);
 
     if (!data.candidates || data.candidates.length === 0) {
         tbody.innerHTML = `<tr><td colspan="${colCount}" class="px-4 py-8 text-center text-gray-600">Sin candidatos aun</td></tr>`;
@@ -208,7 +236,15 @@ async function loadCandidates() {
         // Mismo criterio que el Sheet: total solo cuando las dos fases terminaron.
         const total = c.total_score != null ? c.total_score : '—';
         const canRetry = c.written_status === 'error' || c.video_status === 'error';
-        const videoCell = isEditor ? '' : `<td class="px-4 py-3 text-sm text-gold">${vs}</td>`;
+
+        // Razones visibles: por que el video quedo en N/A (ej. respondio
+        // "no pude hacer el video") y por que una fila esta en error. La
+        // version completa queda en el title y en el modal del candidato.
+        const razonNA = c.video_status === 'no_video' && c.razon_na
+            ? `<div class="text-xs text-gray-500 truncate mt-0.5" style="max-width:230px" title="${esc(c.razon_na)}">${esc(c.razon_na)}</div>` : '';
+        const razonError = overallStatus === 'error' && c.razon_error
+            ? `<div class="text-xs text-red-400/80 truncate mt-0.5" style="max-width:230px" title="${esc(c.error_message || '')}">${esc(c.razon_error)}</div>` : '';
+        const videoCell = isEditor ? '' : `<td class="px-4 py-3 text-sm text-gold">${vs}${razonNA}</td>`;
 
         html += `<tr class="hover:bg-midnight-light/50 cursor-pointer transition-colors" onclick="showCandidate('${c.id}')">
             <td class="px-4 py-3 text-sm text-gray-500">${c.sheet_row}</td>
@@ -217,7 +253,7 @@ async function loadCandidates() {
             <td class="px-4 py-3 text-sm text-gold">${ws}</td>
             ${videoCell}
             <td class="px-4 py-3 text-sm text-gold font-semibold">${total}</td>
-            <td class="px-4 py-3">${statusPill(overallStatus)}</td>
+            <td class="px-4 py-3">${statusPill(overallStatus)}${razonError}</td>
             <td class="px-4 py-3">${canRetry ? `<button onclick="event.stopPropagation(); retryCandidate('${c.id}')" class="text-xs text-gold hover:text-gold-light transition-colors">Reintentar</button>` : ''}</td>
         </tr>`;
     });
@@ -279,7 +315,10 @@ async function showCandidate(id) {
         html += `<div class="border border-midnight-border rounded-md p-3">
             <h4 class="font-medium text-sm text-gold mb-2">Evaluacion Video</h4>`;
         if (c.video_status === 'no_video') {
-            html += '<p class="text-sm text-gold/70">Sin video</p>';
+            html += `<p class="text-sm text-gold/70">Sin video${c.razon_na ? ' — ' + esc(c.razon_na) : ''}</p>`;
+            if (c.video_url) {
+                html += `<p class="text-xs text-gray-500 mt-1">Lo que puso en el formulario: ${esc(c.video_url)}</p>`;
+            }
         } else {
             html += `<p class="text-lg font-bold text-white font-display">${c.video_score != null ? c.video_score + ' pts' : 'Pendiente'}</p>
             <p class="text-sm text-gray-400 mt-1">${c.video_explanation || ''}</p>`;
