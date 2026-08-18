@@ -167,13 +167,29 @@ def sync_completed_to_sheet(
     totales = 0
     completos = db.list_completed_for_total(monitor_id)
     if completos:
-        filas_total = [
-            {
-                "row_number": c["sheet_row"],
-                "value": (c.get("written_score") or 0) + (c.get("video_score") or 0),
-            }
-            for c in completos
-        ]
+        # La misma guarda de desalineacion que arriba. Sin esto, si alguien ordena
+        # la hoja, los puntajes individuales quedan protegidos pero este bloque
+        # (que escribe por numero de fila TODOS los ciclos) le pone a cada fila el
+        # total de otro candidato. Paso el 18 ago 2026 con el monitor de becas.
+        filas_total = []
+        for c in completos:
+            fila = c["sheet_row"]
+            if email_by_row is not None:
+                esperado = (email_by_row.get(fila) or "").strip().lower()
+                actual = (c.get("email") or "").strip().lower()
+                if esperado and actual and esperado != actual:
+                    salteados += 1
+                    log.error(
+                        f"Fila {fila} desalineada para 'Puntaje total': el sheet tiene "
+                        f"'{esperado[:40]}' y la base '{actual[:40]}'. NO se escribe."
+                    )
+                    continue
+            filas_total.append(
+                {
+                    "row_number": fila,
+                    "value": (c.get("written_score") or 0) + (c.get("video_score") or 0),
+                }
+            )
         for i in range(0, len(filas_total), CHUNK_FILAS):
             write_column(
                 sheet_id=sheet_id,

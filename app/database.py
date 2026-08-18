@@ -562,7 +562,7 @@ def list_completed_for_total(monitor_id: str) -> list[dict]:
     db = get_db()
     return (
         db.table("candidates")
-        .select("id,sheet_row,written_score,video_score")
+        .select("id,sheet_row,email,written_score,video_score")
         .eq("monitor_id", monitor_id)
         .eq("written_status", "completed")
         .in_("video_status", ["completed", "no_video"])
