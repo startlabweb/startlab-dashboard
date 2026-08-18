@@ -337,7 +337,11 @@ def existing_sheet_rows(monitor_id: str) -> set[int]:
 def retry_all_unfinished(monitor_id: str) -> int:
     """Reencola todo lo que no llego a un estado terminal. Devuelve cuantos.
 
-    Resetea `attempts` y el lease, que es lo que los vuelve visibles para la cola.
+    Resetea `attempts`, el lease y `sheet_synced_at`. Esto ultimo es critico:
+    sin resetearlo, un candidato que ya se sincronizo una vez (con su estado
+    de error) queda invisible para el proximo sync automatico aunque el
+    reintento termine bien -- la celda del Sheet se queda mostrando "Error"
+    para siempre. Bug real encontrado en produccion el 18 ago.
     """
     db = get_db()
     pendientes = (
@@ -361,6 +365,7 @@ def retry_all_unfinished(monitor_id: str) -> int:
                 "worker_id": None,
                 "lease_expires_at": EPOCH,
                 "error_message": None,
+                "sheet_synced_at": None,
             }
         ).in_("id", lote).execute()
 

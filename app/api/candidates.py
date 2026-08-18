@@ -73,6 +73,14 @@ async def retry_candidate(monitor_id: str, candidate_id: str):
     Antes solo actuaba sobre status 'error', asi que un candidato colgado en
     'processing' no se podia recuperar desde la UI. Ahora tambien resetea
     `attempts` y el lease, que es lo que lo hace visible para la cola.
+
+    BUG real encontrado en produccion (18 ago): si el candidato ya se habia
+    sincronizado una vez al Sheet (con su estado de error), `sheet_synced_at`
+    quedaba seteado para siempre. Un reintento exitoso cambiaba el puntaje en
+    la base, pero el Sheet nunca se enteraba porque el candidato ya no
+    calificaba para el proximo sync automatico -- la celda quedaba mostrando
+    "Error" para siempre a pesar de tener nota. Resetear `sheet_synced_at` aca
+    es lo que lo vuelve a poner en la fila de "hay que escribir esto".
     """
     candidate = await asyncio.to_thread(db.get_candidate, candidate_id)
     if not candidate or candidate.get("monitor_id") != monitor_id:
@@ -83,6 +91,7 @@ async def retry_candidate(monitor_id: str, candidate_id: str):
         "attempts": 0,
         "worker_id": None,
         "lease_expires_at": db.EPOCH,
+        "sheet_synced_at": None,
     }
     if candidate.get("written_status") in ("error", "processing"):
         update["written_status"] = "pending"
