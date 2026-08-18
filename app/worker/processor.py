@@ -352,6 +352,43 @@ def _process_written(monitor, candidate, candidate_id, headers, row_data, exclud
         # una celda vacia es indistinguible de "no se proceso".
 
 
+def _build_video_explanation(gpt_result: dict, video_criteria: dict) -> str:
+    """Arma la explicacion con el desglose de puntos por criterio.
+
+    El LLM ya devuelve un `criterio_N_razon` por cada criterio de la rubrica,
+    pero antes solo se escribia `gpt_result['resumen']` (2 oraciones genericas)
+    en el Sheet y el desglose se descartaba. Se arma aca, con codigo, en vez de
+    pedirle al LLM que lo formatee: es deterministico y no depende de que el
+    prompt lo pida bien en cada llamada.
+    """
+    parsed = video_criteria.get("parsed_criteria") or []
+    total_points = video_criteria.get("total_points", 20)
+    total = gpt_result.get("puntuacion_total", 0)
+
+    lineas = [f"Roleplay: {total}/{total_points}"]
+    for i, c in enumerate(parsed, 1):
+        prefix = f"criterio_{i}_"
+        score = None
+        razon = None
+        for key, value in gpt_result.items():
+            if not key.startswith(prefix):
+                continue
+            if key.endswith("_razon") or key.endswith("_reason"):
+                razon = value
+            elif isinstance(value, (int, float)):
+                score = value
+        if score is None and razon is None:
+            continue
+        lineas.append(f"{i}. {c.get('name', f'Criterio {i}')} ({score}/{c.get('max_points', '?')}): {razon or ''}")
+
+    if len(lineas) == 1:
+        # No se pudo mapear ningun criterio (estructura del prompt inesperada):
+        # mejor el resumen generico que una nota vacia.
+        return gpt_result.get("resumen", "")
+
+    return "\n".join(lineas)
+
+
 def _process_video(monitor, candidate, candidate_id, emit_event):
     """Evaluate video roleplay."""
     monitor_id = monitor["id"]
@@ -456,7 +493,7 @@ def _process_video(monitor, candidate, candidate_id, emit_event):
             raise RuntimeError(f"GPT error: {gpt_result['error']}")
 
         score = gpt_result.get("puntuacion_total", 0)
-        explanation = gpt_result.get("resumen", "")
+        explanation = _build_video_explanation(gpt_result, video_criteria)
 
         # Si la transcripcion no es confiable, el aviso tiene que llegar hasta la
         # planilla: 6 de los 20 puntos (fluidez) se calculan sobre los datos de

@@ -225,6 +225,13 @@ async function loadCandidates() {
         return `<span class="text-xs px-2 py-0.5 rounded-full ${colors[status] || colors.pending}">${status}</span>`;
     };
 
+    // Zonas de beca (mismo criterio que el formato condicional del Sheet):
+    // verde = top 5 por puntaje total (empates en el 5º puesto incluidos),
+    // durazno = el primer grupo de puntaje justo debajo del corte (suplentes).
+    const totales = data.candidates.map(c => c.total_score).filter(t => t != null).sort((a, b) => b - a);
+    const corteBeca = totales.length >= 5 ? totales[4] : null;
+    const corteSuplente = corteBeca != null ? (totales.find(t => t < corteBeca) ?? null) : null;
+
     let html = '';
     data.candidates.forEach(c => {
         const overallStatus = (c.written_status === 'error' || c.video_status === 'error') ? 'error' :
@@ -237,6 +244,18 @@ async function loadCandidates() {
         const total = c.total_score != null ? c.total_score : '—';
         const canRetry = c.written_status === 'error' || c.video_status === 'error';
 
+        let tierClass = '';
+        let tierBadge = '';
+        if (c.total_score != null && corteBeca != null) {
+            if (c.total_score >= corteBeca) {
+                tierClass = ' bg-green-900/25';
+                tierBadge = ` <span class="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-green-900/40 text-green-400 border border-green-800">top 5</span>`;
+            } else if (corteSuplente != null && c.total_score === corteSuplente) {
+                tierClass = ' bg-orange-900/25';
+                tierBadge = ` <span class="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-orange-900/40 text-orange-300 border border-orange-800">suplente</span>`;
+            }
+        }
+
         // Razones visibles: por que el video quedo en N/A (ej. respondio
         // "no pude hacer el video") y por que una fila esta en error. La
         // version completa queda en el title y en el modal del candidato.
@@ -246,13 +265,13 @@ async function loadCandidates() {
             ? `<div class="text-xs text-red-400/80 truncate mt-0.5" style="max-width:230px" title="${esc(c.error_message || '')}">${esc(c.razon_error)}</div>` : '';
         const videoCell = isEditor ? '' : `<td class="px-4 py-3 text-sm text-gold">${vs}${razonNA}</td>`;
 
-        html += `<tr class="hover:bg-midnight-light/50 cursor-pointer transition-colors" onclick="showCandidate('${c.id}')">
+        html += `<tr class="hover:bg-midnight-light/50 cursor-pointer transition-colors${tierClass}" onclick="showCandidate('${c.id}')">
             <td class="px-4 py-3 text-sm text-gray-500">${c.sheet_row}</td>
             <td class="px-4 py-3 text-sm font-medium text-white">${c.name || '—'}</td>
             <td class="px-4 py-3 text-sm text-gray-500">${c.email || '—'}</td>
             <td class="px-4 py-3 text-sm text-gold">${ws}</td>
             ${videoCell}
-            <td class="px-4 py-3 text-sm text-gold font-semibold">${total}</td>
+            <td class="px-4 py-3 text-sm text-gold font-semibold">${total}${tierBadge}</td>
             <td class="px-4 py-3">${statusPill(overallStatus)}${razonError}</td>
             <td class="px-4 py-3">${canRetry ? `<button onclick="event.stopPropagation(); retryCandidate('${c.id}')" class="text-xs text-gold hover:text-gold-light transition-colors">Reintentar</button>` : ''}</td>
         </tr>`;
