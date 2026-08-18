@@ -84,3 +84,37 @@ def write_results(
     limiter.acquire(cost=1)
     ws.update_cells(cells, value_input_option="USER_ENTERED")
     log.info(f"Wrote {len(results)} results to cols {score_col} and {explanation_col}")
+
+
+def write_column(
+    sheet_id: str,
+    results: list[dict],
+    worksheet_name: str = "Form Responses 1",
+    column_name: str = "Puntaje total",
+) -> None:
+    """Escribe UNA sola columna (sin explicacion al lado). Usado para 'Puntaje
+    total': una columna del equipo que el sistema calcula (escritas + roleplay)
+    una vez que las dos fases estan completas.
+
+    `results` es una lista de {"row_number": int, "value": ...}.
+    """
+    if not results:
+        return
+
+    ws = get_worksheet(sheet_id, worksheet_name)
+
+    limiter.acquire(cost=1)
+    headers = ws.row_values(1)
+    col = _find_column(headers, column_name)
+    if not col:
+        log.error(f"Column '{column_name}' not found in headers: {headers}")
+        return
+
+    cells = [
+        gspread.Cell(row=r["row_number"], col=col, value=str(r.get("value", "")))
+        for r in results
+    ]
+
+    limiter.acquire(cost=1)
+    ws.update_cells(cells, value_input_option="USER_ENTERED")
+    log.info(f"Wrote {len(results)} totals to col {col}")

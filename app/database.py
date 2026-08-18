@@ -503,6 +503,27 @@ def queue_state(monitor_id: str, max_attempts: int = 3) -> dict:
     }
 
 
+def list_completed_for_total(monitor_id: str) -> list[dict]:
+    """Candidatos con las DOS fases completas, para (re)calcular 'Puntaje total'.
+
+    A proposito NO filtra por sheet_synced_at: el total puede quedar pendiente
+    de escribir si las escritas se sincronizaron en un ciclo y el video recien
+    termino en el siguiente. Recalcularlo cada ciclo es barato (una sola
+    llamada batcheada al Sheet) y evita ese caso.
+    """
+    db = get_db()
+    return (
+        db.table("candidates")
+        .select("id,sheet_row,written_score,video_score")
+        .eq("monitor_id", monitor_id)
+        .eq("written_status", "completed")
+        .in_("video_status", ["completed", "no_video"])
+        .execute()
+        .data
+        or []
+    )
+
+
 def list_candidates_for_sheet_sync(monitor_id: str, force: bool = False) -> list[dict]:
     """Candidatos en estado terminal que hay que escribir al Sheet.
 

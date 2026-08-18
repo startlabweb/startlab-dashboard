@@ -16,7 +16,7 @@ alimenta el `sheet_dirty` de /progress.
 
 from app import database as db
 from tools.logger import get_logger
-from tools.sheet_writer import write_results
+from tools.sheet_writer import write_column, write_results
 
 log = get_logger("sheet_sync")
 
@@ -31,6 +31,28 @@ def _recortar(texto: object) -> str:
     if len(s) > MAX_EXPLICACION:
         return s[: MAX_EXPLICACION - 3] + "..."
     return s
+
+
+def _resumen_corto(mensaje: object) -> str:
+    """Reduce un error largo a una etiqueta corta para la celda de PUNTAJE.
+
+    Antes esa celda solo decia "Error", y el motivo vivia unicamente en la
+    columna de explicacion de al lado — facil de perder al mirar solo los
+    puntajes en un sheet ancho. Ahora el motivo va tambien en la celda de
+    puntaje; el detalle completo sigue integro en la explicacion.
+    """
+    m = (str(mensaje) if mensaje else "").lower()
+    if "sin acceso" in m or "cannot access" in m:
+        return "sin acceso al video"
+    if "pesa" in m and "mb" in m:
+        return "video muy pesado"
+    if "yt-dlp" in m or "loom" in m or "carpeta" in m:
+        return "link roto o de carpeta"
+    if "timeout" in m or "supero" in m:
+        return "tiempo agotado"
+    if "json" in m or "parsear" in m:
+        return "transcripcion fallida"
+    return "ver explicacion"
 
 
 def sync_completed_to_sheet(
@@ -55,9 +77,13 @@ def sync_completed_to_sheet(
     sheet_id = monitor["sheet_id"]
     worksheet = monitor.get("sheet_name", "Form Responses 1")
 
+    # OJO: nunca cortar la funcion aca con un `return` temprano si `candidatos`
+    # viene vacio. El calculo de "Puntaje total" de mas abajo tiene que correr
+    # SIEMPRE, incluso cuando no hay nada nuevo que sincronizar por columna:
+    # es el caso normal en regimen (todo ya sincronizado individualmente) y es
+    # exactamente cuando puede faltar el total de alguien cuyo video termino
+    # despues de que las escritas ya se marcaron sincronizadas.
     candidatos = db.list_candidates_for_sheet_sync(monitor_id, force=force)
-    if not candidatos:
-        return {"written": 0, "video": 0, "skipped": 0, "requests": 0}
 
     filas_escritas: list[dict] = []
     filas_video: list[dict] = []
@@ -83,8 +109,9 @@ def sync_completed_to_sheet(
         ws_status = c.get("written_status")
         if ws_status in ("completed", "error") and (force or not c.get("sheet_synced_at")):
             if ws_status == "error":
-                puntaje = "Error"
-                explicacion = f"Escritas no evaluadas: {c.get('error_message') or 'sin detalle'}"
+                detalle = c.get("error_message") or "sin detalle"
+                puntaje = f"Error: {_resumen_corto(detalle)}"
+                explicacion = f"Escritas no evaluadas: {detalle}"
             else:
                 puntaje = c.get("written_score")
                 explicacion = c.get("written_explanation")
@@ -100,8 +127,9 @@ def sync_completed_to_sheet(
         vs_status = c.get("video_status")
         if vs_status in ("completed", "error") and (force or not c.get("sheet_synced_at")):
             if vs_status == "error":
-                puntaje = "Error"
-                explicacion = f"Video no evaluado: {c.get('error_message') or 'sin detalle'}"
+                detalle = c.get("error_message") or "sin detalle"
+                puntaje = f"Error: {_resumen_corto(detalle)}"
+                explicacion = f"Video no evaluado: {detalle}"
             else:
                 puntaje = c.get("video_score")
                 explicacion = c.get("video_explanation")
@@ -147,12 +175,39 @@ def sync_completed_to_sheet(
     if sincronizados:
         db.mark_sheet_synced(sincronizados)
 
+    # "Puntaje total" = escritas + roleplay, solo cuando las DOS fases estan
+    # completas. Se recalcula TODOS los ciclos (no solo lo recien sincronizado):
+    # si las escritas se sincronizaron en un ciclo y el video recien termino en
+    # el siguiente, este candidato no aparece en `candidatos` de arriba (ya
+    # tiene sheet_synced_at), pero si en list_completed_for_total. Es 1 sola
+    # llamada batcheada, barata incluso con cientos de candidatos completos.
+    totales = 0
+    completos = db.list_completed_for_total(monitor_id)
+    if completos:
+        filas_total = [
+            {
+                "row_number": c["sheet_row"],
+                "value": (c.get("written_score") or 0) + (c.get("video_score") or 0),
+            }
+            for c in completos
+        ]
+        for i in range(0, len(filas_total), CHUNK_FILAS):
+            write_column(
+                sheet_id=sheet_id,
+                results=filas_total[i : i + CHUNK_FILAS],
+                worksheet_name=worksheet,
+                column_name="Puntaje total",
+            )
+            requests += 1
+        totales = len(filas_total)
+
     resultado = {
         "written": len(filas_escritas),
         "video": len(filas_video),
         "skipped": salteados,
+        "totals": totales,
         "requests": requests,
     }
-    if filas_escritas or filas_video or salteados:
+    if filas_escritas or filas_video or salteados or totales:
         log.info(f"sheet_sync monitor {monitor_id}: {resultado}")
     return resultado
