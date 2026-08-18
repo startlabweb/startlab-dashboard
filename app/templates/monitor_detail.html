@@ -42,6 +42,7 @@
                         <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Email</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Escritas</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider video-only">Video</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Total</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Status</th>
                         <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Acciones</th>
                     </tr>
@@ -178,7 +179,7 @@ async function loadCandidates() {
     const tbody = document.getElementById('candidates-body');
 
     const isEditor = monitorData && monitorData.evaluator_type === 'editor';
-    const colCount = isEditor ? 6 : 7;
+    const colCount = isEditor ? 7 : 8;
 
     if (!data.candidates || data.candidates.length === 0) {
         tbody.innerHTML = `<tr><td colspan="${colCount}" class="px-4 py-8 text-center text-gray-600">Sin candidatos aun</td></tr>`;
@@ -204,6 +205,8 @@ async function loadCandidates() {
 
         const ws = c.written_score != null ? c.written_score : '—';
         const vs = c.video_status === 'no_video' ? 'N/A' : (c.video_score != null ? c.video_score : '—');
+        // Mismo criterio que el Sheet: total solo cuando las dos fases terminaron.
+        const total = c.total_score != null ? c.total_score : '—';
         const canRetry = c.written_status === 'error' || c.video_status === 'error';
         const videoCell = isEditor ? '' : `<td class="px-4 py-3 text-sm text-gold">${vs}</td>`;
 
@@ -213,6 +216,7 @@ async function loadCandidates() {
             <td class="px-4 py-3 text-sm text-gray-500">${c.email || '—'}</td>
             <td class="px-4 py-3 text-sm text-gold">${ws}</td>
             ${videoCell}
+            <td class="px-4 py-3 text-sm text-gold font-semibold">${total}</td>
             <td class="px-4 py-3">${statusPill(overallStatus)}</td>
             <td class="px-4 py-3">${canRetry ? `<button onclick="event.stopPropagation(); retryCandidate('${c.id}')" class="text-xs text-gold hover:text-gold-light transition-colors">Reintentar</button>` : ''}</td>
         </tr>`;

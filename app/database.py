@@ -122,22 +122,65 @@ def list_candidates(
     campos: str = "*",
     status: str | None = None,
 ) -> list[dict]:
-    """Lista candidatos.
+    """Lista candidatos ordenados de mayor a menor `total_score`.
 
     `campos` permite pedir una projection angosta: traer select("*") con 300 filas
     arrastra `transcript` y `written_answers` completos (varios MB por request).
     `status` filtra por estado en cualquiera de las dos fases.
+
+    El orden por total no es algo que Postgres pueda hacer via PostgREST sin una
+    columna dedicada (es escritas+video, calculado), asi que se trae TODO (paginado
+    de a 1000, mismo patron que `existing_sheet_rows`) y se ordena en Python. Con
+    los cientos de candidatos de una convocatoria esto es barato: es la misma
+    projection angosta que ya se usaba, solo que sin el limit aplicado en la query.
     """
     db = get_db()
-    q = db.table("candidates").select(campos).eq("monitor_id", monitor_id)
-    if status:
-        q = q.or_(f"written_status.eq.{status},video_status.eq.{status}")
-    result = (
-        q.order("sheet_row", desc=False)
-        .range(offset, offset + limit - 1)
-        .execute()
+    campos_query = campos
+    if campos != "*":
+        requeridos = {"written_score", "video_score", "written_status", "video_status"}
+        faltantes = requeridos - set(c.strip() for c in campos.split(","))
+        if faltantes:
+            campos_query = campos + "," + ",".join(faltantes)
+
+    filas: list[dict] = []
+    paso = 1000
+    desde = 0
+    while True:
+        q = db.table("candidates").select(campos_query).eq("monitor_id", monitor_id)
+        if status:
+            q = q.or_(f"written_status.eq.{status},video_status.eq.{status}")
+        lote = q.order("sheet_row", desc=False).range(desde, desde + paso - 1).execute().data or []
+        filas.extend(lote)
+        if len(lote) < paso:
+            break
+        desde += paso
+
+    def total_de(c: dict) -> float | None:
+        # Misma regla que list_completed_for_total: un total solo tiene sentido
+        # cuando las DOS fases terminaron. Antes de eso queda None (el frontend
+        # lo muestra como "-"), no un 0 enganoso.
+        if c.get("written_status") == "completed" and c.get("video_status") in (
+            "completed",
+            "no_video",
+        ):
+            return (c.get("written_score") or 0) + (c.get("video_score") or 0)
+        return None
+
+    for c in filas:
+        c["total_score"] = total_de(c)
+
+    # Mayor a menor primero; los sin total (aun en curso) al final, por orden de
+    # llegada -- para que el operador siga viendo el pipeline en curso abajo de
+    # la tabla en vez de mezclado entre los ya rankeados.
+    filas.sort(
+        key=lambda c: (
+            c["total_score"] is None,
+            -(c["total_score"] or 0),
+            c["sheet_row"],
+        )
     )
-    return result.data
+
+    return filas[offset : offset + limit]
 
 
 def update_candidate(candidate_id: str, data: dict) -> dict:
