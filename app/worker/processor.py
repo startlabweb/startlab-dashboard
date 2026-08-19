@@ -124,6 +124,62 @@ def _resolver_columnas(monitor: dict, headers: list[str]) -> dict:
     }
 
 
+def _realinear_por_email(monitor_id: str, data_rows: list, email_col_idx: int | None, name_col_idx: int | None) -> int:
+    """Reubica los candidatos existentes a la fila donde su email esta HOY.
+
+    Google Forms INSERTA cada respuesta nueva (no la apendea al final): toda
+    fila manual o posterior se corre una posicion con cada submission, y si el
+    equipo ordena la hoja se corren todas. Ingerir por numero de fila sin
+    reconciliar creaba candidatos fantasma con los datos corridos (18-19 ago
+    2026: 8 copias de una candidata manual, evaluadas y cobradas 8 veces).
+
+    Identidad = email (colas en orden de fila para emails repetidos). Los
+    candidatos sin email (agregados a mano) se identifican por nombre exacto.
+    Devuelve cuantos candidatos se reubicaron.
+    """
+    existentes = db.list_candidates_for_realign(monitor_id)
+    if not existentes:
+        return 0
+
+    def celda(row_data: list, idx: int | None) -> str:
+        if idx is None or idx >= len(row_data):
+            return ""
+        return str(row_data[idx])
+
+    por_email: dict[str, list[dict]] = {}
+    por_nombre: dict[str, list[dict]] = {}
+    for c in sorted(existentes, key=lambda x: x["sheet_row"]):
+        em = (c.get("email") or "").strip().lower()
+        if em:
+            por_email.setdefault(em, []).append(c)
+        else:
+            nom = (c.get("name") or "").strip().lower()
+            if nom:
+                por_nombre.setdefault(nom, []).append(c)
+
+    moves: list[dict] = []
+    for row_idx, row_data in enumerate(data_rows):
+        fila = row_idx + 2
+        em = celda(row_data, email_col_idx).strip().lower()
+        cola = por_email.get(em) if em else None
+        if not cola and not em:
+            nom = celda(row_data, name_col_idx).strip().lower()
+            cola = por_nombre.get(nom) if nom else None
+        if not cola:
+            continue
+        c = cola.pop(0)
+        if c["sheet_row"] != fila:
+            moves.append({"id": c["id"], "sheet_row": fila})
+
+    if moves:
+        db.move_sheet_rows(moves)
+        log.warning(
+            f"Monitor {monitor_id}: {len(moves)} candidatos realineados por email "
+            f"(el sheet cambio de orden o Forms inserto filas)"
+        )
+    return len(moves)
+
+
 def ingest_new_rows(monitor: dict, emit_event: Callable) -> dict:
     """FASE A — descubrir trabajo. Barata, idempotente, sin ninguna llamada a LLM.
 
@@ -147,6 +203,12 @@ def ingest_new_rows(monitor: dict, emit_event: Callable) -> dict:
     email_col_idx = cols["email_col_idx"]
     excluded_idxs = cols["excluded_idxs"]
     video_col_idxs = cols["video_col_idxs"]
+
+    # Reconciliar posiciones ANTES de decidir que filas son nuevas: si Forms
+    # inserto filas o el equipo ordeno la hoja, cada candidato existente se
+    # reubica a la fila donde esta su email hoy. Sin esto, las filas corridas
+    # se ingieren como candidatos nuevos con los datos de otra persona.
+    _realinear_por_email(monitor_id, data_rows, email_col_idx, name_col_idx)
 
     ya_existen = db.existing_sheet_rows(monitor_id)
 

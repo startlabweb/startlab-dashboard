@@ -377,6 +377,48 @@ def existing_sheet_rows(monitor_id: str) -> set[int]:
     return filas
 
 
+def list_candidates_for_realign(monitor_id: str) -> list[dict]:
+    """id, sheet_row, email y name de TODOS los candidatos del monitor.
+
+    Alimenta la realineacion por email del ingest: es la foto contra la que
+    se compara la posicion real de cada email en el sheet.
+    """
+    db = get_db()
+    out: list[dict] = []
+    paso = 1000
+    offset = 0
+    while True:
+        result = (
+            db.table("candidates")
+            .select("id,sheet_row,email,name")
+            .eq("monitor_id", monitor_id)
+            .range(offset, offset + paso - 1)
+            .execute()
+        )
+        lote = result.data or []
+        out.extend(lote)
+        if len(lote) < paso:
+            break
+        offset += paso
+    return out
+
+
+def move_sheet_rows(moves: list[dict]) -> None:
+    """Reubica candidatos a nuevas filas en 2 pasadas batcheadas.
+
+    La pasada intermedia (+100000) esquiva el UNIQUE(monitor_id, sheet_row)
+    cuando dos candidatos intercambian posiciones. `moves` es una lista de
+    {"id": ..., "sheet_row": fila_final}.
+    """
+    if not moves:
+        return
+    db = get_db()
+    paso1 = [{"id": m["id"], "sheet_row": m["sheet_row"] + 100000} for m in moves]
+    db.table("candidates").upsert(paso1).execute()
+    paso2 = [{"id": m["id"], "sheet_row": m["sheet_row"]} for m in moves]
+    db.table("candidates").upsert(paso2).execute()
+
+
 def retry_all_unfinished(monitor_id: str) -> int:
     """Reencola todo lo que no llego a un estado terminal. Devuelve cuantos.
 
