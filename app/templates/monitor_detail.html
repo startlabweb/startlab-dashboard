@@ -56,14 +56,14 @@
             <table class="min-w-full divide-y divide-midnight-border">
                 <thead class="bg-midnight-light">
                     <tr>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Fila</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Nombre</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Email</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Escritas</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider video-only">Video</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Total</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Status</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Acciones</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Fila</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Nombre</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Email</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Escritas</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider video-only">Video</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Total</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Status</th>
+                        <th class="px-3 py-3 text-left text-xs font-medium text-gold/70 uppercase tracking-wider">Acciones</th>
                     </tr>
                 </thead>
                 <tbody id="candidates-body" class="divide-y divide-midnight-border/50">
@@ -333,20 +333,23 @@ function renderCandidates() {
         // "no pude hacer el video") y por que una fila esta en error. La
         // version completa queda en el title y en el modal del candidato.
         const razonNA = c.video_status === 'no_video' && c.razon_na
-            ? `<div class="text-xs text-gray-500 truncate mt-0.5" style="max-width:230px" title="${esc(c.razon_na)}">${esc(c.razon_na)}</div>` : '';
+            ? `<div class="text-xs text-gray-500 truncate mt-0.5" style="max-width:170px" title="${esc(c.razon_na)}">${esc(c.razon_na)}</div>` : '';
         const razonError = overallStatus === 'error' && c.razon_error
-            ? `<div class="text-xs text-red-400/80 truncate mt-0.5" style="max-width:230px" title="${esc(c.error_message || '')}">${esc(c.razon_error)}</div>` : '';
-        const videoCell = isEditor ? '' : `<td class="px-4 py-3 text-sm text-gold">${vs}${razonNA}</td>`;
+            ? `<div class="text-xs text-red-400/80 truncate mt-0.5" style="max-width:170px" title="${esc(c.error_message || '')}">${esc(c.razon_error)}</div>` : '';
+        const videoCell = isEditor ? '' : `<td class="px-3 py-3 text-sm text-gold">${vs}${razonNA}</td>`;
 
+        // Nombre y email truncados: son las columnas que inflaban la tabla mas
+        // alla de la tarjeta y dejaban Acciones fuera de vista. El texto
+        // completo queda en el title y en el modal del candidato.
         html += `<tr class="hover:bg-midnight-light/50 cursor-pointer transition-colors${tierClass}" onclick="showCandidate('${c.id}')">
-            <td class="px-4 py-3 text-sm text-gray-500">${c.sheet_row}</td>
-            <td class="px-4 py-3 text-sm font-medium text-white">${c.name || '—'}</td>
-            <td class="px-4 py-3 text-sm text-gray-500">${c.email || '—'}</td>
-            <td class="px-4 py-3 text-sm text-gold">${ws}</td>
+            <td class="px-3 py-3 text-sm text-gray-500">${c.sheet_row}</td>
+            <td class="px-3 py-3 text-sm font-medium text-white truncate" style="max-width:170px" title="${esc(c.name || '')}">${esc(c.name) || '—'}</td>
+            <td class="px-3 py-3 text-sm text-gray-500 truncate" style="max-width:190px" title="${esc(c.email || '')}">${esc(c.email) || '—'}</td>
+            <td class="px-3 py-3 text-sm text-gold">${ws}</td>
             ${videoCell}
-            <td class="px-4 py-3 text-sm text-gold font-semibold whitespace-nowrap">${total}${tierBadge}</td>
-            <td class="px-4 py-3">${statusPill(overallStatus)}${razonError}</td>
-            <td class="px-4 py-3">${canRetry ? `<button onclick="event.stopPropagation(); retryCandidate('${c.id}')" class="text-xs text-gold hover:text-gold-light transition-colors">Reintentar</button>` : ''}</td>
+            <td class="px-3 py-3 text-sm text-gold font-semibold whitespace-nowrap">${total}${tierBadge}</td>
+            <td class="px-3 py-3">${statusPill(overallStatus)}${razonError}</td>
+            <td class="px-3 py-3">${canRetry ? `<button onclick="event.stopPropagation(); retryCandidate('${c.id}')" class="text-xs text-gold hover:text-gold-light transition-colors">Reintentar</button>` : ''}</td>
         </tr>`;
     });
     tbody.innerHTML = html;
