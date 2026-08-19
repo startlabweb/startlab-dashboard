@@ -86,6 +86,51 @@ def write_results(
     log.info(f"Wrote {len(results)} results to cols {score_col} and {explanation_col}")
 
 
+def write_totals_formula(
+    sheet_id: str,
+    rows: list[int],
+    worksheet_name: str = "Form Responses 1",
+    total_column: str = "Puntaje total",
+    sum_columns: tuple[str, str] = ("Puntaje Preguntas", "Puntaje Roleplay"),
+) -> None:
+    """Escribe en la columna del total una FORMULA por fila: =SUM(escritas, roleplay).
+
+    Pedido de Jossy (19 ago 2026) tras el incidente de los totales cruzados: el
+    valor calculado se escribia por numero de fila y, con la hoja reordenada,
+    podia caer en la fila de otra persona. Una formula referencia SU PROPIA
+    fila, asi que aunque la base quede desalineada la celda nunca puede mostrar
+    el total de otro candidato. SUM ignora texto ("Error: ...") y celdas vacias.
+    """
+    if not rows:
+        return
+
+    ws = get_worksheet(sheet_id, worksheet_name)
+
+    limiter.acquire(cost=1)
+    headers = ws.row_values(1)
+    col_total = _find_column(headers, total_column)
+    col_a = _find_column(headers, sum_columns[0])
+    col_b = _find_column(headers, sum_columns[1])
+    if not col_total or not col_a or not col_b:
+        log.error(
+            f"Columnas del total no encontradas (total={col_total}, "
+            f"{sum_columns[0]}={col_a}, {sum_columns[1]}={col_b}) en: {headers}"
+        )
+        return
+
+    cells = []
+    for row in rows:
+        ref_a = gspread.utils.rowcol_to_a1(row, col_a)
+        ref_b = gspread.utils.rowcol_to_a1(row, col_b)
+        cells.append(
+            gspread.Cell(row=row, col=col_total, value=f"=SUM({ref_a},{ref_b})")
+        )
+
+    limiter.acquire(cost=1)
+    ws.update_cells(cells, value_input_option="USER_ENTERED")
+    log.info(f"Wrote {len(rows)} total formulas to col {col_total}")
+
+
 def write_column(
     sheet_id: str,
     results: list[dict],

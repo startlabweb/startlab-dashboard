@@ -17,7 +17,7 @@ alimenta el `sheet_dirty` de /progress.
 from app import database as db
 from tools.logger import get_logger
 from tools.motivos import resumen_error as _resumen_corto
-from tools.sheet_writer import write_column, write_results
+from tools.sheet_writer import write_results, write_totals_formula
 
 log = get_logger("sheet_sync")
 
@@ -164,13 +164,17 @@ def sync_completed_to_sheet(
     # el siguiente, este candidato no aparece en `candidatos` de arriba (ya
     # tiene sheet_synced_at), pero si en list_completed_for_total. Es 1 sola
     # llamada batcheada, barata incluso con cientos de candidatos completos.
+    #
+    # Se escribe como FORMULA (=SUM(escritas, roleplay) de la propia fila), no
+    # como valor: un valor escrito por numero de fila puede caer en la fila de
+    # otra persona si la hoja se reordena (paso el 18-19 ago 2026); una formula
+    # siempre suma las celdas de SU fila, este donde este.
     totales = 0
     completos = db.list_completed_for_total(monitor_id)
     if completos:
-        # La misma guarda de desalineacion que arriba. Sin esto, si alguien ordena
-        # la hoja, los puntajes individuales quedan protegidos pero este bloque
-        # (que escribe por numero de fila TODOS los ciclos) le pone a cada fila el
-        # total de otro candidato. Paso el 18 ago 2026 con el monitor de becas.
+        # La misma guarda de desalineacion que arriba: aunque la formula sea
+        # inocua en cualquier fila, no tiene sentido ponersela a una fila que
+        # no corresponde a un candidato completo.
         filas_total = []
         for c in completos:
             fila = c["sheet_row"]
@@ -184,18 +188,17 @@ def sync_completed_to_sheet(
                         f"'{esperado[:40]}' y la base '{actual[:40]}'. NO se escribe."
                     )
                     continue
-            filas_total.append(
-                {
-                    "row_number": fila,
-                    "value": (c.get("written_score") or 0) + (c.get("video_score") or 0),
-                }
-            )
+            filas_total.append(fila)
         for i in range(0, len(filas_total), CHUNK_FILAS):
-            write_column(
+            write_totals_formula(
                 sheet_id=sheet_id,
-                results=filas_total[i : i + CHUNK_FILAS],
+                rows=filas_total[i : i + CHUNK_FILAS],
                 worksheet_name=worksheet,
-                column_name="Puntaje total",
+                total_column="Puntaje total",
+                sum_columns=(
+                    monitor.get("written_score_column") or "Puntaje Preguntas",
+                    monitor.get("video_score_column") or "Puntaje Roleplay",
+                ),
             )
             requests += 1
         totales = len(filas_total)
