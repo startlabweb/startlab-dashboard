@@ -122,17 +122,17 @@ def list_candidates(
     campos: str = "*",
     status: str | None = None,
 ) -> list[dict]:
-    """Lista candidatos ordenados de mayor a menor `total_score`.
+    """Lista candidatos en el mismo orden que el Sheet (`sheet_row` ascendente).
 
     `campos` permite pedir una projection angosta: traer select("*") con 300 filas
     arrastra `transcript` y `written_answers` completos (varios MB por request).
     `status` filtra por estado en cualquiera de las dos fases.
 
-    El orden por total no es algo que Postgres pueda hacer via PostgREST sin una
-    columna dedicada (es escritas+video, calculado), asi que se trae TODO (paginado
-    de a 1000, mismo patron que `existing_sheet_rows`) y se ordena en Python. Con
-    los cientos de candidatos de una convocatoria esto es barato: es la misma
-    projection angosta que ya se usaba, solo que sin el limit aplicado en la query.
+    Se trae TODO (paginado de a 1000, mismo patron que `existing_sheet_rows`) para
+    poder calcular `total_score` de cada fila en Python: el frontend lo usa para
+    los badges de top 5/suplente y los filtros por puntaje. Con los cientos de
+    candidatos de una convocatoria esto es barato: es la misma projection angosta
+    que ya se usaba, solo que sin el limit aplicado en la query.
     """
     db = get_db()
     campos_query = campos
@@ -169,16 +169,11 @@ def list_candidates(
     for c in filas:
         c["total_score"] = total_de(c)
 
-    # Mayor a menor primero; los sin total (aun en curso) al final, por orden de
-    # llegada -- para que el operador siga viendo el pipeline en curso abajo de
-    # la tabla en vez de mezclado entre los ya rankeados.
-    filas.sort(
-        key=lambda c: (
-            c["total_score"] is None,
-            -(c["total_score"] or 0),
-            c["sheet_row"],
-        )
-    )
+    # Mismo orden que el Sheet (pedido de Jossy, 19 ago 2026): por fila, o sea
+    # orden de llegada. El ranking por puntaje se hace en el frontend via
+    # filtros, no reordenando la lista -- asi la tabla del monitor y la planilla
+    # se leen igual, fila por fila.
+    filas.sort(key=lambda c: c["sheet_row"])
 
     return filas[offset : offset + limit]
 

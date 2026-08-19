@@ -35,7 +35,24 @@
     <div id="tab-candidates" class="tab-content">
         <!-- Resumen siempre visible: cuantos llenaron el form y en que estado estan -->
         <div id="resumen-candidatos" class="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-3 text-sm text-gray-400"></div>
-        <div class="bg-midnight-card rounded-lg border border-midnight-border overflow-hidden">
+        <!-- Filtros por puntaje: la tabla queda en orden de llegada (igual que el
+             Sheet); para rankear se filtra, no se reordena — ver trampa #4 del
+             monitor de becas: ordenar la hoja real rompe el mapeo por fila. -->
+        <div id="filtros-candidatos" class="flex flex-wrap items-center gap-2 mb-3 text-sm">
+            <button data-tier="all" onclick="setTier('all')" class="tier-btn px-3 py-1 rounded-full border transition-colors">Todos</button>
+            <button data-tier="top" onclick="setTier('top')" class="tier-btn px-3 py-1 rounded-full border transition-colors">🟢 Top 5</button>
+            <button data-tier="suplente" onclick="setTier('suplente')" class="tier-btn px-3 py-1 rounded-full border transition-colors">🟠 Suplentes</button>
+            <button data-tier="con" onclick="setTier('con')" class="tier-btn px-3 py-1 rounded-full border transition-colors">Con puntaje</button>
+            <button data-tier="sin" onclick="setTier('sin')" class="tier-btn px-3 py-1 rounded-full border transition-colors">Sin puntaje</button>
+            <label class="flex items-center gap-1.5 ml-2 text-gray-400">Puntaje ≥
+                <input id="filtro-min" type="number" min="0" step="1" oninput="onMinChange()"
+                       class="w-16 bg-midnight-light border border-midnight-border rounded px-2 py-1 text-white text-sm focus:border-gold focus:outline-none">
+            </label>
+            <span id="filtro-conteo" class="text-xs text-gray-500 ml-auto"></span>
+        </div>
+        <!-- overflow-x-auto y no overflow-hidden: si la tabla queda mas ancha que
+             la tarjeta (emails largos), se scrollea; hidden recortaba Acciones. -->
+        <div class="bg-midnight-card rounded-lg border border-midnight-border overflow-x-auto">
             <table class="min-w-full divide-y divide-midnight-border">
                 <thead class="bg-midnight-light">
                     <tr>
@@ -199,17 +216,63 @@ function renderResumen(counts, candidates) {
     el.innerHTML = html;
 }
 
+// Filtros de la tabla: el orden siempre es el del Sheet (llegada); estos solo
+// esconden filas. Los cortes de top 5 / suplente se calculan SIEMPRE sobre la
+// lista completa, no sobre lo filtrado, para que el badge no cambie al filtrar.
+let candidatesCache = null;
+const filtro = { tier: 'all', min: null };
+
+function setTier(t) {
+    filtro.tier = filtro.tier === t ? 'all' : t; // segundo click = destildar
+    renderCandidates();
+}
+
+function onMinChange() {
+    const v = document.getElementById('filtro-min').value;
+    filtro.min = v === '' ? null : Number(v);
+    renderCandidates();
+}
+
+function pintarFiltros() {
+    document.querySelectorAll('.tier-btn').forEach(btn => {
+        const activo = btn.dataset.tier === filtro.tier;
+        btn.className = 'tier-btn px-3 py-1 rounded-full border transition-colors ' + (activo
+            ? 'border-gold text-gold bg-gold/10'
+            : 'border-midnight-border text-gray-400 hover:text-gold hover:border-gold/50');
+    });
+}
+
+function pasaFiltro(c, corteBeca, corteSuplente) {
+    const t = c.total_score;
+    if (filtro.min != null && (t == null || t < filtro.min)) return false;
+    switch (filtro.tier) {
+        case 'top': return t != null && corteBeca != null && t >= corteBeca;
+        case 'suplente': return t != null && corteSuplente != null && t === corteSuplente;
+        case 'con': return t != null;
+        case 'sin': return t == null;
+        default: return true;
+    }
+}
+
 async function loadCandidates() {
     const res = await fetch(`/api/monitors/${monitorId}/candidates`);
-    const data = await res.json();
+    candidatesCache = await res.json();
+    renderCandidates();
+}
+
+function renderCandidates() {
+    const data = candidatesCache;
+    if (!data) return;
     const tbody = document.getElementById('candidates-body');
 
     const isEditor = monitorData && monitorData.evaluator_type === 'editor';
     const colCount = isEditor ? 7 : 8;
 
     renderResumen(data.counts, data.candidates);
+    pintarFiltros();
 
     if (!data.candidates || data.candidates.length === 0) {
+        document.getElementById('filtro-conteo').textContent = '';
         tbody.innerHTML = `<tr><td colspan="${colCount}" class="px-4 py-8 text-center text-gray-600">Sin candidatos aun</td></tr>`;
         return;
     }
@@ -232,8 +295,18 @@ async function loadCandidates() {
     const corteBeca = totales.length >= 5 ? totales[4] : null;
     const corteSuplente = corteBeca != null ? (totales.find(t => t < corteBeca) ?? null) : null;
 
+    const visibles = data.candidates.filter(c => pasaFiltro(c, corteBeca, corteSuplente));
+    const hayFiltro = filtro.tier !== 'all' || filtro.min != null;
+    document.getElementById('filtro-conteo').textContent =
+        hayFiltro ? `mostrando ${visibles.length} de ${data.candidates.length}` : '';
+
+    if (visibles.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${colCount}" class="px-4 py-8 text-center text-gray-600">Ningun candidato pasa el filtro</td></tr>`;
+        return;
+    }
+
     let html = '';
-    data.candidates.forEach(c => {
+    visibles.forEach(c => {
         const overallStatus = (c.written_status === 'error' || c.video_status === 'error') ? 'error' :
             (c.written_status === 'processing' || c.video_status === 'processing') ? 'processing' :
             (c.written_status === 'completed' && (c.video_status === 'completed' || c.video_status === 'no_video')) ? 'completed' : 'pending';
