@@ -31,8 +31,8 @@
         <p class="text-sm text-gray-400 mb-2">Tipo de evaluador</p>
         <div class="grid grid-cols-2 gap-3 mb-5">
             <button type="button" onclick="selectType('sales')" id="type-sales" class="evaluator-card text-left p-4 rounded-md border border-gold bg-midnight-light">
-                <p class="font-semibold text-gold">Sales (Setter / Closer)</p>
-                <p class="text-xs text-gray-400 mt-1">Respuestas escritas + video roleplay</p>
+                <p class="font-semibold text-gold">Escritas + Video</p>
+                <p class="text-xs text-gray-400 mt-1">Respuestas escritas + video (Loom o Google Drive)</p>
                 <p class="text-xs text-gray-500 mt-1">~$0.17 / candidato</p>
             </button>
             <button type="button" onclick="selectType('editor')" id="type-editor" class="evaluator-card text-left p-4 rounded-md border border-midnight-border bg-midnight">
@@ -70,9 +70,9 @@
 
         <!-- Video criteria (sales only) -->
         <div class="mb-6" id="video-criteria-block">
-            <h3 class="font-medium text-gold mb-2">B. Criterios para Video Roleplay</h3>
-            <p class="text-xs text-gray-500 mb-2">Describe la rubrica para evaluar el roleplay + el script de referencia.</p>
-            <textarea id="video-criteria" rows="6" class="w-full bg-midnight border border-midnight-border rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-gold focus:border-gold" placeholder="Ej: Sigue el script a cabalidad - 4pts, Suena natural - 6pts, Profundiza - 8pts, No excede 5min - 2pts..."></textarea>
+            <h3 class="font-medium text-gold mb-2">B. Criterios para Video</h3>
+            <p class="text-xs text-gray-500 mb-2">Describe la rubrica para evaluar el video (roleplay o presentacion) y el material de referencia si aplica.</p>
+            <textarea id="video-criteria" rows="6" class="w-full bg-midnight border border-midnight-border rounded-md px-3 py-2 text-sm text-white placeholder-gray-600 focus:ring-2 focus:ring-gold focus:border-gold" placeholder="Ej: Responde las preguntas pedidas - 8pts, Claridad y comunicacion - 6pts, Actitud - 4pts, No excede 5min - 2pts..."></textarea>
             <button onclick="parseCriteria('video')" class="mt-2 bg-midnight-light border border-midnight-border text-gray-300 px-3 py-1.5 rounded-md text-sm hover:border-gold hover:text-gold transition-colors">Analizar criterios video</button>
             <div id="video-criteria-result" class="mt-3"></div>
         </div>
@@ -208,6 +208,7 @@ async function createMonitor() {
     const body = {
         sheet_url: document.getElementById('sheet-url').value,
         sheet_id: sheetData.sheet_id,
+        sheet_name: sheetData.worksheet,
         sheet_title: sheetData.title,
         evaluator_type: evaluatorType,
     };
@@ -305,7 +306,7 @@ async function confirmAllCriteria() {
     document.getElementById('step3-indicator').querySelectorAll('span')[1].classList.replace('text-gray-500', 'text-gold');
 
     const costPerCandidate = evaluatorType === 'editor' ? 0.02 : 0.17;
-    const typeLabel = evaluatorType === 'editor' ? 'Editor / Content Manager' : 'Sales (Setter / Closer)';
+    const typeLabel = evaluatorType === 'editor' ? 'Editor / Content Manager' : 'Escritas + Video';
 
     let summaryHtml = `
         <p class="text-white"><strong>Tipo:</strong> ${typeLabel}</p>

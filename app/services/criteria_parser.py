@@ -54,7 +54,7 @@ def parse_criteria(raw_text: str, criteria_type: str, evaluator_type: str = "sal
     elif criteria_type == "written":
         context = "written form answers"
     else:
-        context = "video roleplay performance"
+        context = "a spoken video submission (sales roleplay or presentation video)"
 
     system_prompt = SYSTEM_PROMPT_BASE
     if evaluator_type == "editor":
@@ -207,7 +207,7 @@ def _generate_video_prompt(criteria: list[dict], total_points: int) -> str:
         field_name = f"criterio_{i}"
         json_fields += f'"{field_name}_score": <0-{c["max_points"]}>, "{field_name}_name": "{c["name"]}", "{field_name}_reason": "<explanation>", '
 
-    prompt = f"""You are an expert evaluator for sales roleplay calls. Evaluate the transcription against the criteria below and return ONLY valid JSON, no markdown.
+    prompt = f"""You are an expert evaluator for spoken video submissions (sales roleplays or presentation videos). Evaluate the transcription against the criteria below and return ONLY valid JSON, no markdown.
 
 ## CANDIDATE DATA
 
@@ -238,6 +238,6 @@ Continuity details: {{continuidad_detalle}}
 - Provide specific reasons for each score
 
 Return ONLY this JSON:
-{{{json_fields}"puntuacion_total": <sum, max {total_points}>, "resumen": "Roleplay: X/{total_points} — <2 sentences about overall performance>"}}"""
+{{{json_fields}"puntuacion_total": <sum, max {total_points}>, "resumen": "Video: X/{total_points} — <2 sentences about overall performance>"}}"""
 
     return prompt

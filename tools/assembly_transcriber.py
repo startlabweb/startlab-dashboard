@@ -244,13 +244,20 @@ def transcribe(audio_path: Path) -> dict:
         if cps > 35:
             motivos.append(f"Transcripcion implausible: {cps:.0f} c/s")
 
-    # El conteo de muletillas es en español. Si el audio esta en otro idioma, el
-    # conteo da 0 y la rubrica regala los 6 puntos de fluidez.
+    # El conteo de muletillas es en español, pero el proceso acepta videos en
+    # español o ingles (ago 2026: el video de presentacion puede grabarse en
+    # cualquiera de los dos). Para los idiomas aceptados NO se marca la
+    # transcripcion como sospechosa: la rubrica en DB ya instruye como evaluar
+    # fillers en ingles leyendo la transcripcion literal.
+    idiomas_ok = tuple(
+        i.strip() for i in os.environ.get("AUDIO_LANGS_OK", "es,en").split(",") if i.strip()
+    )
     idioma = datos.get("language_code")
-    if idioma and not str(idioma).startswith("es"):
+    if idioma and not str(idioma).startswith(idiomas_ok):
         motivos.append(
-            f"El audio no esta en español (detectado: {idioma}). El conteo de "
-            f"muletillas no aplica y la nota de fluidez NO es confiable"
+            f"El audio no esta en un idioma esperado (detectado: {idioma}, "
+            f"aceptados: {', '.join(idiomas_ok)}). El conteo de muletillas no "
+            f"aplica y la nota de fluidez NO es confiable"
         )
 
     calidad: dict = {}

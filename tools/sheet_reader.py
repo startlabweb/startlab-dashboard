@@ -83,7 +83,14 @@ def preview_sheet(
     """Get sheet metadata + headers + first 3 rows for preview."""
     client = get_gspread_client()
     sheet = client.open_by_key(sheet_id)
-    ws = sheet.worksheet(worksheet_name)
+    try:
+        ws = sheet.worksheet(worksheet_name)
+    except gspread.exceptions.WorksheetNotFound:
+        # Google Forms nombra la pestaña segun el idioma de la cuenta
+        # ("Respuestas de formulario 1", etc.). Si el nombre esperado no
+        # existe, se usa la primera pestaña y se devuelve su titulo real
+        # para que el monitor se cree con ese nombre.
+        ws = sheet.get_worksheet(0)
 
     all_values = ws.get_all_values()
     headers = all_values[0] if all_values else []
@@ -103,7 +110,7 @@ def preview_sheet(
 
     return {
         "title": sheet.title,
-        "worksheet": worksheet_name,
+        "worksheet": ws.title,
         "headers": headers,
         "sample_rows": sample_rows,
         "total_rows": total_rows,

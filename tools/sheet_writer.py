@@ -46,7 +46,7 @@ def write_results(
     sheet_id: str,
     results: list[dict],
     worksheet_name: str = "Form Responses 1",
-    score_column: str = "Puntaje Roleplay",
+    score_column: str = "Puntaje Video",
     explanation_column: str = "Explicación",
 ) -> None:
     """Write evaluation results to specific columns in the sheet."""
@@ -91,9 +91,9 @@ def write_totals_formula(
     rows: list[int],
     worksheet_name: str = "Form Responses 1",
     total_column: str = "Puntaje total",
-    sum_columns: tuple[str, str] = ("Puntaje Preguntas", "Puntaje Roleplay"),
+    sum_columns: tuple[str, str] = ("Puntaje Preguntas", "Puntaje Video"),
 ) -> None:
-    """Escribe en la columna del total una FORMULA por fila: =SUM(escritas, roleplay).
+    """Escribe en la columna del total una FORMULA por fila: =SUM(escritas, video).
 
     Pedido de Jossy (19 ago 2026) tras el incidente de los totales cruzados: el
     valor calculado se escribia por numero de fila y, con la hoja reordenada,

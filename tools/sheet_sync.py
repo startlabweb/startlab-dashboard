@@ -146,7 +146,7 @@ def sync_completed_to_sheet(
             sheet_id=sheet_id,
             results=lote,
             worksheet_name=worksheet,
-            score_column=monitor.get("video_score_column") or "Puntaje Roleplay",
+            score_column=monitor.get("video_score_column") or "Puntaje Video",
             explanation_column=monitor.get("video_explanation_column") or "Explicación",
         )
         requests += 2
@@ -197,7 +197,7 @@ def sync_completed_to_sheet(
                 total_column="Puntaje total",
                 sum_columns=(
                     monitor.get("written_score_column") or "Puntaje Preguntas",
-                    monitor.get("video_score_column") or "Puntaje Roleplay",
+                    monitor.get("video_score_column") or "Puntaje Video",
                 ),
             )
             requests += 1

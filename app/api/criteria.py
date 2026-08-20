@@ -21,6 +21,10 @@ class CriteriaUploadRequest(BaseModel):
     # inventaria umbrales distintos a los del documento.
     prompt_template: str | None = None
     total_points: int | None = None
+    # Solo junto con prompt_template: el desglose de criterios (name + max_points)
+    # para que la explicacion en el Sheet etiquete cada criterio por su nombre en
+    # vez de una sola entrada "Rubrica fija". No pasa por el parser de IA.
+    parsed_criteria: list[dict] | None = None
 
 
 class CriteriaConfirmRequest(BaseModel):
@@ -45,14 +49,27 @@ async def upload_criteria(monitor_id: str, req: CriteriaUploadRequest):
 
     if req.prompt_template:
         # Prompt fijo: no pasa por el parser, no se le inventa nada.
-        parsed = {
-            "criteria": [
+        if req.parsed_criteria:
+            suma = sum(c.get("max_points", 0) for c in req.parsed_criteria)
+            if req.total_points and suma != req.total_points:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"parsed_criteria suma {suma} pts pero total_points "
+                        f"es {req.total_points}"
+                    ),
+                )
+            criterios = req.parsed_criteria
+        else:
+            criterios = [
                 {
                     "name": f"Rubrica fija ({req.criteria_type})",
                     "description": "Prompt cargado textual, sin parseo de IA",
                     "max_points": req.total_points or 0,
                 }
-            ],
+            ]
+        parsed = {
+            "criteria": criterios,
             "total_points": req.total_points or 0,
             "notes": "Prompt fijo: los puntajes son los del documento, sin inferencia.",
         }

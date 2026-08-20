@@ -33,6 +33,7 @@ async def sheet_preview(req: SheetPreviewRequest):
     return {
         "sheet_id": sheet_id,
         "title": data["title"],
+        "worksheet": data["worksheet"],
         "headers": data["headers"],
         "sample_rows": data["sample_rows"],
         "total_rows": data["total_rows"],

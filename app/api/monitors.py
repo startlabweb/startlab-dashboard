@@ -14,7 +14,7 @@ EVALUATOR_DEFAULTS = {
     "sales": {
         "written_score_column": "Puntaje Preguntas",
         "written_explanation_column": "Explicación",
-        "video_score_column": "Puntaje Roleplay",
+        "video_score_column": "Puntaje Video",
         "video_explanation_column": "Explicación",
     },
     "editor": {
@@ -32,6 +32,20 @@ class CreateMonitorRequest(BaseModel):
     sheet_name: str = "Form Responses 1"
     sheet_title: str | None = None
     evaluator_type: Literal["sales", "editor"] = "sales"
+    video_column: str | None = None
+    written_score_column: str | None = None
+    written_explanation_column: str | None = None
+    video_score_column: str | None = None
+    video_explanation_column: str | None = None
+
+
+class UpdateMonitorRequest(BaseModel):
+    # Solo config editable en caliente. NO se aceptan `status` (lo maneja el
+    # worker manager), ni `sheet_id`/`evaluator_type` (cambiarlos con candidatos
+    # ya ingresados dejaria la base apuntando a filas de otra planilla o a un
+    # pipeline de evaluacion que no corresponde).
+    sheet_title: str | None = None
+    sheet_name: str | None = None
     video_column: str | None = None
     written_score_column: str | None = None
     written_explanation_column: str | None = None
@@ -89,6 +103,26 @@ async def get_monitor(monitor_id: str):
     monitor["written_criteria"] = written
     monitor["video_criteria"] = video
     return monitor
+
+
+@router.patch("/{monitor_id}")
+async def patch_monitor(monitor_id: str, req: UpdateMonitorRequest):
+    monitor = await asyncio.to_thread(db.get_monitor, monitor_id)
+    if not monitor:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+
+    data = req.model_dump(exclude_none=True)
+    if not data:
+        raise HTTPException(status_code=400, detail="Nada que actualizar")
+
+    updated = await asyncio.to_thread(db.update_monitor, monitor_id, data)
+    await asyncio.to_thread(
+        db.log_activity,
+        monitor_id,
+        "monitor_updated",
+        f"Config actualizada: {', '.join(sorted(data))}",
+    )
+    return updated
 
 
 @router.post("/{monitor_id}/start")

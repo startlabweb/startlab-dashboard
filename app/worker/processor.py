@@ -38,7 +38,7 @@ def _resolver_columnas(monitor: dict, headers: list[str]) -> dict:
     name_col_idx = None
     email_col_idx = None
 
-    PISTAS_VIDEO = ("video", "roleplay", "enlace", "adjunt", "archivo", "sube ", "subí")
+    PISTAS_VIDEO = ("video", "roleplay", "loom", "enlace", "adjunt", "archivo", "sube ", "subí")
 
     for i, h in enumerate(headers):
         h_lower = h.lower().strip()
@@ -427,7 +427,7 @@ def _build_video_explanation(gpt_result: dict, video_criteria: dict) -> str:
     total_points = video_criteria.get("total_points", 20)
     total = gpt_result.get("puntuacion_total", 0)
 
-    lineas = [f"Roleplay: {total}/{total_points}"]
+    lineas = [f"Video: {total}/{total_points}"]
     for i, c in enumerate(parsed, 1):
         prefix = f"criterio_{i}_"
         score = None
@@ -539,7 +539,7 @@ def _process_video(monitor, candidate, candidate_id, emit_event):
         if len(transcripcion) < 50:
             raise RuntimeError(
                 f"Transcripcion vacia o demasiado corta ({len(transcripcion)} "
-                f"caracteres): no se puede evaluar el roleplay"
+                f"caracteres): no se puede evaluar el video"
             )
 
         emit_event({"type": "transcribed", "name": name, "duration": gemini_data.get("duracion_segundos", 0)})
