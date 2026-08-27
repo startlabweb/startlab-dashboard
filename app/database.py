@@ -137,7 +137,13 @@ def list_candidates(
     db = get_db()
     campos_query = campos
     if campos != "*":
-        requeridos = {"written_score", "video_score", "written_status", "video_status"}
+        requeridos = {
+            "written_score",
+            "video_score",
+            "written_status",
+            "video_status",
+            "iq_status",
+        }
         faltantes = requeridos - set(c.strip() for c in campos.split(","))
         if faltantes:
             campos_query = campos + "," + ",".join(faltantes)
@@ -148,7 +154,10 @@ def list_candidates(
     while True:
         q = db.table("candidates").select(campos_query).eq("monitor_id", monitor_id)
         if status:
-            q = q.or_(f"written_status.eq.{status},video_status.eq.{status}")
+            q = q.or_(
+                f"written_status.eq.{status},video_status.eq.{status},"
+                f"iq_status.eq.{status}"
+            )
         lote = q.order("sheet_row", desc=False).range(desde, desde + paso - 1).execute().data or []
         filas.extend(lote)
         if len(lote) < paso:
@@ -188,17 +197,24 @@ def _counts_vacios() -> dict:
     return {"total": 0, "completed": 0, "processing": 0, "pending": 0, "error": 0}
 
 
+# Estados de la etapa IQ que NO son trabajo pendiente: 'waiting' es "aprobado y
+# esperando que exista la sesion" y 'no_session' es "no va a tener sesion". Un
+# candidato asi esta terminado desde el punto de vista del worker.
+IQ_SIN_TRABAJO = ("waiting", "no_session", "completed")
+
+
 def _sumar_a_counts(counts: dict, row: dict):
     """Clasifica una fila de candidato en el bucket que le corresponde."""
     counts["total"] += 1
     # Consider completed if written is done (video might be no_video)
     ws = row.get("written_status", "pending")
     vs = row.get("video_status", "pending")
-    if ws == "completed" and vs in ("completed", "no_video"):
+    iq = row.get("iq_status", "waiting")
+    if ws == "completed" and vs in ("completed", "no_video") and iq in IQ_SIN_TRABAJO:
         counts["completed"] += 1
-    elif ws == "error" or vs == "error":
+    elif ws == "error" or vs == "error" or iq == "error":
         counts["error"] += 1
-    elif ws == "processing" or vs == "processing":
+    elif ws == "processing" or vs == "processing" or iq == "processing":
         counts["processing"] += 1
     else:
         counts["pending"] += 1
@@ -217,7 +233,7 @@ def count_candidates_bulk(monitor_ids: list[str]) -> dict[str, dict]:
     db = get_db()
     all_rows = (
         db.table("candidates")
-        .select("monitor_id, written_status, video_status")
+        .select("monitor_id, written_status, video_status, iq_status")
         .in_("monitor_id", monitor_ids)
         .execute()
     )
@@ -240,11 +256,18 @@ def count_candidates(monitor_id: str) -> dict:
 # del candidato y el estado de la cola son lo mismo y no hay que reconciliar dos
 # fuentes de verdad. Requiere la migracion 003.
 
-# Un candidato es reclamable si alguna de sus dos fases no termino. 'processing'
+# Un candidato es reclamable si alguna de sus fases no termino. 'processing'
 # entra a proposito: si el worker murio, el lease vencido lo devuelve a la cola.
+#
+# `iq_status` suma solo 'pending', 'processing' y 'error'. NI 'waiting' NI
+# 'no_session' entran, y eso es lo que hace que la tercera etapa no rompa la
+# cola: un candidato aprobado que todavia no tuvo su sesion de IQ esta en
+# 'waiting', y si 'waiting' fuera reclamable se lo tomaria en cada ciclo hasta
+# quemar sus 3 intentos sin que exista nada que evaluar.
 CLAIMABLE = (
     "written_status.in.(pending,processing,error),"
-    "video_status.in.(pending,processing,error)"
+    "video_status.in.(pending,processing,error),"
+    "iq_status.in.(pending,processing,error)"
 )
 
 
@@ -340,7 +363,10 @@ def reap_expired_leases(monitor_id: str, max_attempts: int = 3) -> int:
         .eq("monitor_id", monitor_id)
         .lt("attempts", max_attempts)
         .lt("lease_expires_at", _iso(_ahora()))
-        .or_("written_status.eq.processing,video_status.eq.processing")
+        .or_(
+            "written_status.eq.processing,video_status.eq.processing,"
+            "iq_status.eq.processing"
+        )
         .execute()
     )
     return len(result.data or [])
@@ -426,7 +452,7 @@ def retry_all_unfinished(monitor_id: str) -> int:
     db = get_db()
     pendientes = (
         db.table("candidates")
-        .select("id,written_status,video_status")
+        .select("id,written_status,video_status,iq_status")
         .eq("monitor_id", monitor_id)
         .or_(CLAIMABLE)
         .execute()
@@ -450,7 +476,9 @@ def retry_all_unfinished(monitor_id: str) -> int:
         ).in_("id", lote).execute()
 
     # 'processing' y 'error' vuelven a 'pending' por fase, sin tocar lo completado.
-    for campo in ("written_status", "video_status"):
+    # `iq_status` se incluye, pero solo desde 'processing'/'error': un 'waiting'
+    # no es trabajo trabado, es un candidato esperando que exista su sesion.
+    for campo in ("written_status", "video_status", "iq_status"):
         for estado in ("processing", "error"):
             afectados = [c["id"] for c in pendientes if c.get(campo) == estado]
             for i in range(0, len(afectados), 200):
@@ -476,7 +504,7 @@ def monitor_progress(monitor_id: str) -> dict | None:
     filas = (
         db.table("candidates")
         .select(
-            "written_status,video_status,attempts,lease_expires_at,"
+            "written_status,video_status,iq_status,attempts,lease_expires_at,"
             "sheet_synced_at,processed_at,cost_usd"
         )
         .eq("monitor_id", monitor_id)
@@ -491,6 +519,7 @@ def monitor_progress(monitor_id: str) -> dict | None:
 
     TERMINAL_W = ("completed",)
     TERMINAL_V = ("completed", "no_video")
+    TERMINAL_IQ = IQ_SIN_TRABAJO
 
     total = len(filas)
     done = 0
@@ -507,19 +536,20 @@ def monitor_progress(monitor_id: str) -> dict | None:
     for f in filas:
         ws = f.get("written_status")
         vs = f.get("video_status")
+        iq = f.get("iq_status") or "waiting"
         intentos = f.get("attempts") or 0
         costo += float(f.get("cost_usd") or 0)
 
-        if ws in TERMINAL_W and vs in TERMINAL_V:
+        if ws in TERMINAL_W and vs in TERMINAL_V and iq in TERMINAL_IQ:
             done += 1
-        elif ws == "processing" or vs == "processing":
+        elif ws == "processing" or vs == "processing" or iq == "processing":
             en_vuelo += 1
             if (f.get("lease_expires_at") or "") < ahora_iso:
                 lease_vencido += 1
         else:
             pendientes += 1
 
-        if ws == "error" or vs == "error":
+        if ws == "error" or vs == "error" or iq == "error":
             con_error += 1
             if intentos >= 3:
                 agotados += 1
@@ -528,7 +558,9 @@ def monitor_progress(monitor_id: str) -> dict | None:
 
         # Terminal (incluye error) pero todavia no escrito en el Sheet
         if not f.get("sheet_synced_at") and (
-            ws in ("completed", "error") or vs in ("completed", "error")
+            ws in ("completed", "error")
+            or vs in ("completed", "error")
+            or iq in ("completed", "error")
         ):
             sheet_dirty += 1
 
@@ -560,7 +592,10 @@ def queue_state(monitor_id: str, max_attempts: int = 3) -> dict:
     db = get_db()
     filas = (
         db.table("candidates")
-        .select("sheet_row,written_status,video_status,attempts,lease_expires_at,worker_id")
+        .select(
+            "sheet_row,written_status,video_status,iq_status,attempts,"
+            "lease_expires_at,worker_id"
+        )
         .eq("monitor_id", monitor_id)
         .execute()
         .data
@@ -575,6 +610,7 @@ def queue_state(monitor_id: str, max_attempts: int = 3) -> dict:
         and (
             f.get("written_status") in ("pending", "processing", "error")
             or f.get("video_status") in ("pending", "processing", "error")
+            or f.get("iq_status") in ("pending", "processing", "error")
         )
     ]
     en_vuelo = [f for f in filas if (f.get("lease_expires_at") or "") >= ahora_iso]
@@ -619,7 +655,9 @@ def list_candidates_for_sheet_sync(monitor_id: str, force: bool = False) -> list
     campos = (
         "id,sheet_row,email,sheet_synced_at,error_message,"
         "written_status,written_score,written_explanation,"
-        "video_status,video_score,video_explanation"
+        "video_status,video_score,video_explanation,"
+        "iq_status,iq_score,iq_explanation,"
+        "gate1_pass,gate1_decision,gate2_pass"
     )
     db = get_db()
     q = (
@@ -627,7 +665,9 @@ def list_candidates_for_sheet_sync(monitor_id: str, force: bool = False) -> list
         .select(campos)
         .eq("monitor_id", monitor_id)
         .or_(
-            "written_status.in.(completed,error),video_status.in.(completed,error)"
+            "written_status.in.(completed,error),"
+            "video_status.in.(completed,error),"
+            "iq_status.in.(completed,error)"
         )
     )
     if not force:
@@ -668,6 +708,58 @@ def upsert_candidates(rows: list[dict], chunk: int = 100) -> int:
         )
         insertados += len(result.data or [])
     return insertados
+
+
+# --- Embudo: gates y etapa IQ ----------------------------------------------
+
+
+def list_candidates_gate_state(monitor_id: str) -> list[dict]:
+    """Todo lo que el ciclo de gates necesita, en UNA query paginada.
+
+    Las cuatro cosas que hace ese ciclo (calcular los cortes, leer la decision de
+    Paula, avisar a Slack y buscar la sesion en Drive) miran los mismos
+    candidatos, asi que se traen una sola vez por ciclo. `iq_breakdown` viene
+    porque el Gate 2 sale de sus dos booleanos.
+    """
+    campos = (
+        "id,sheet_row,name,email,video_url,error_message,"
+        "written_status,written_score,video_status,video_score,"
+        "iq_status,iq_score,iq_breakdown,iq_source_file_id,"
+        "gate1_pass,gate1_decision,gate1_notified_at,gate2_pass"
+    )
+    db = get_db()
+    out: list[dict] = []
+    paso = 1000
+    offset = 0
+    while True:
+        lote = (
+            db.table("candidates")
+            .select(campos)
+            .eq("monitor_id", monitor_id)
+            .order("sheet_row", desc=False)
+            .range(offset, offset + paso - 1)
+            .execute()
+            .data
+            or []
+        )
+        out.extend(lote)
+        if len(lote) < paso:
+            break
+        offset += paso
+    return out
+
+
+def mark_gate1_notified(candidate_ids: list[str], chunk: int = 200) -> None:
+    """Sella el aviso de Slack para que no se repita en el proximo ciclo."""
+    if not candidate_ids:
+        return
+    db = get_db()
+    ahora = _iso(_ahora())
+    for i in range(0, len(candidate_ids), chunk):
+        lote = candidate_ids[i : i + chunk]
+        db.table("candidates").update({"gate1_notified_at": ahora}).in_(
+            "id", lote
+        ).execute()
 
 
 # --- Activity Log ---

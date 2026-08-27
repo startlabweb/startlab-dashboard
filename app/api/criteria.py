@@ -37,14 +37,31 @@ async def upload_criteria(monitor_id: str, req: CriteriaUploadRequest):
     if not monitor:
         raise HTTPException(status_code=404, detail="Monitor not found")
 
-    if req.criteria_type not in ("written", "video"):
-        raise HTTPException(status_code=400, detail="criteria_type must be 'written' or 'video'")
-
-    evaluator_type = monitor.get("evaluator_type", "sales")
-    if evaluator_type == "editor" and req.criteria_type == "video":
+    if req.criteria_type not in ("written", "video", "iq"):
         raise HTTPException(
             status_code=400,
-            detail="Editor evaluators do not support video criteria",
+            detail="criteria_type must be 'written', 'video' or 'iq'",
+        )
+
+    evaluator_type = monitor.get("evaluator_type", "sales")
+    if evaluator_type == "editor" and req.criteria_type in ("video", "iq"):
+        raise HTTPException(
+            status_code=400,
+            detail="Editor evaluators do not support video or IQ criteria",
+        )
+
+    # La rubrica del IQ NO pasa por el parser de IA, nunca. Son dos casos con una
+    # palanca correcta cada uno y una regla exacta de cuando se acierta: el parser
+    # tiene como norma explicita inventar umbrales razonables cuando no los
+    # encuentra, y eso aca cambiaria quien pasa el corte.
+    if req.criteria_type == "iq" and not req.prompt_template:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "La rubrica de IQ se carga textual: manda `prompt_template` con "
+                "el contenido de prompts/consultor_iq.md, `total_points` y "
+                "`parsed_criteria`. El parser de IA inventaria los umbrales."
+            ),
         )
 
     if req.prompt_template:
@@ -135,6 +152,18 @@ async def confirm_criteria(monitor_id: str, criteria_type: str, req: CriteriaCon
         raise HTTPException(status_code=404, detail="Criteria not found")
 
     update_data = {"confirmed": True}
+
+    # Mandar `parsed_criteria` en el confirm regenera el prompt con el parser
+    # generico y pisa el prompt fijo que se acaba de cargar. Para el IQ eso es
+    # directamente un error, no una advertencia en el runbook.
+    if criteria_type == "iq" and req.parsed_criteria:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "El confirm del IQ va con body {}: mandar parsed_criteria "
+                "regeneraria el prompt con el parser y pisaria la rubrica fija."
+            ),
+        )
 
     # If user edited the criteria, regenerate the prompt
     if req.parsed_criteria:

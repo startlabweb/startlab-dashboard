@@ -52,5 +52,21 @@ class Settings:
     # Si AssemblyAI falla el lunes: TRANSCRIBER=gemini en Railway y reiniciar.
     TRANSCRIBER: str = os.getenv("TRANSCRIBER", "assembly")
 
+    # --- Etapa IQ y avisos ---
+
+    # Webhook entrante de Slack para el aviso "estos candidatos pasaron el corte
+    # y esperan la aprobacion de Paula". Vacio = no se avisa, y el resto del
+    # sistema funciona igual (el estado sigue estando en la planilla).
+    SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
+
+    # URL publica del dashboard. Solo se usa para poner el link en el aviso.
+    DASHBOARD_URL: str = os.getenv("DASHBOARD_URL", "")
+
+    # Tope de tamaño para la GRABACION de una sesion de IQ, aparte de
+    # MAX_VIDEO_SIZE_MB (500, pensado para el video de 5 min del candidato): una
+    # sesion de Meet de 40 minutos pesa entre 150 y 600 MB, y de esa grabacion se
+    # baja solo el audio, asi que el disco no es la restriccion.
+    IQ_MAX_RECORDING_MB: int = int(os.getenv("IQ_MAX_RECORDING_MB", "3000"))
+
 
 settings = Settings()

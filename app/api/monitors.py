@@ -51,6 +51,19 @@ class UpdateMonitorRequest(BaseModel):
     written_explanation_column: str | None = None
     video_score_column: str | None = None
     video_explanation_column: str | None = None
+    # Embudo del consultor. `iq_recordings_folder_id` es el interruptor de la
+    # tercera etapa: sin carpeta configurada, el monitor se comporta como antes.
+    # Los umbrales del Gate 1 son NUMERIC y nulos por default, asi que un monitor
+    # sin ellos no corta a nadie.
+    iq_recordings_folder_id: str | None = None
+    iq_session_title: str | None = None
+    iq_score_column: str | None = None
+    iq_explanation_column: str | None = None
+    approval_column: str | None = None
+    gate1_column: str | None = None
+    estado_column: str | None = None
+    gate1_written_min: float | None = None
+    gate1_video_min: float | None = None
 
 
 @router.get("")

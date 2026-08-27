@@ -15,9 +15,10 @@ alimenta el `sheet_dirty` de /progress.
 """
 
 from app import database as db
+from app.services import gates
 from tools.logger import get_logger
 from tools.motivos import resumen_error as _resumen_corto
-from tools.sheet_writer import write_results, write_totals_formula
+from tools.sheet_writer import write_column, write_results, write_totals_formula
 
 log = get_logger("sheet_sync")
 
@@ -70,9 +71,19 @@ def sync_completed_to_sheet(
 
     filas_escritas: list[dict] = []
     filas_video: list[dict] = []
+    filas_iq: list[dict] = []
     ids_written: list[str] = []
     ids_video: list[str] = []
+    ids_iq: list[str] = []
+    filas_gate1: list[dict] = []
+    filas_estado: list[dict] = []
     salteados = 0
+
+    # Las columnas del embudo (IQ, Califica, Estado) se tocan SOLO en un monitor
+    # que tiene el embudo configurado. Los otros tres (becas, editor, setter) no
+    # tienen esos encabezados en su planilla, y escribirles ahi seria un error de
+    # "columna no encontrada" en el log cada 90 segundos.
+    con_embudo = gates.gate1_configurado(monitor) or gates.etapa_iq_activa(monitor)
 
     for c in candidatos:
         fila = c["sheet_row"]
@@ -125,6 +136,43 @@ def sync_completed_to_sheet(
             )
             ids_video.append(c["id"])
 
+        if not con_embudo:
+            continue
+
+        iq_status = c.get("iq_status")
+        if iq_status in ("completed", "error") and (force or not c.get("sheet_synced_at")):
+            if iq_status == "error":
+                detalle = c.get("error_message") or "sin detalle"
+                puntaje = f"Error: {_resumen_corto(detalle)}"
+                explicacion = f"Sesion de IQ no evaluada: {detalle}"
+            else:
+                puntaje = c.get("iq_score")
+                explicacion = c.get("iq_explanation")
+            filas_iq.append(
+                {
+                    "row_number": fila,
+                    "score": "" if puntaje is None else puntaje,
+                    "explanation": _recortar(explicacion),
+                }
+            )
+            ids_iq.append(c["id"])
+
+        # Estas dos son estado derivado, no una nota: se reescriben cada vez que
+        # la fila pasa por aca. Una celda de Estado vieja es peor que una vacia,
+        # porque el equipo decide leyendo esa columna.
+        if monitor.get("gate1_column"):
+            g1 = c.get("gate1_pass")
+            filas_gate1.append(
+                {
+                    "row_number": fila,
+                    "value": "" if g1 is None else ("Sí" if g1 else "No"),
+                }
+            )
+        if monitor.get("estado_column"):
+            filas_estado.append(
+                {"row_number": fila, "value": gates.estado_texto(monitor, c)}
+            )
+
     requests = 0
 
     # Dos llamadas a write_results con TODAS las filas: 1 update_cells cada una.
@@ -151,10 +199,38 @@ def sync_completed_to_sheet(
         )
         requests += 2
 
+    if filas_iq and monitor.get("iq_score_column"):
+        for i in range(0, len(filas_iq), CHUNK_FILAS):
+            lote = filas_iq[i : i + CHUNK_FILAS]
+            write_results(
+                sheet_id=sheet_id,
+                results=lote,
+                worksheet_name=worksheet,
+                score_column=monitor["iq_score_column"],
+                explanation_column=monitor.get("iq_explanation_column")
+                or "Explicación IQ",
+            )
+            requests += 2
+
+    for columna, filas in (
+        (monitor.get("gate1_column"), filas_gate1),
+        (monitor.get("estado_column"), filas_estado),
+    ):
+        if not columna or not filas:
+            continue
+        for i in range(0, len(filas), CHUNK_FILAS):
+            write_column(
+                sheet_id=sheet_id,
+                results=filas[i : i + CHUNK_FILAS],
+                worksheet_name=worksheet,
+                column_name=columna,
+            )
+            requests += 2
+
     # Marcar sincronizado DESPUES de escribir. Si el proceso muere en el medio, el
     # proximo flush reescribe las mismas celdas con el mismo contenido: es
     # idempotente porque `update_cells` sobreescribe por coordenada, no hace append.
-    sincronizados = sorted(set(ids_written) | set(ids_video))
+    sincronizados = sorted(set(ids_written) | set(ids_video) | set(ids_iq))
     if sincronizados:
         db.mark_sheet_synced(sincronizados)
 
@@ -206,10 +282,12 @@ def sync_completed_to_sheet(
     resultado = {
         "written": len(filas_escritas),
         "video": len(filas_video),
+        "iq": len(filas_iq),
+        "estado": len(filas_estado),
         "skipped": salteados,
         "totals": totales,
         "requests": requests,
     }
-    if filas_escritas or filas_video or salteados or totales:
+    if filas_escritas or filas_video or filas_iq or salteados or totales:
         log.info(f"sheet_sync monitor {monitor_id}: {resultado}")
     return resultado
