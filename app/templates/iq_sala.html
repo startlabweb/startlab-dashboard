@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Business IQ Test — Start Lab</title>
+<link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--midnight:#121212;--card:#1E1E1E;--border:#333;--gold:#EAB660;--gold-dim:#C09D46;--text:#F2F2F2;--muted:#8A8A8A;--ok:#4ADE80;--bad:#F87171;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--midnight);color:var(--text);font-family:"Red Hat Display",system-ui,sans-serif;overflow:hidden}
+  /* 1280x720 es el tamano del video que el bot transmite a la reunion. La
+     pagina se escala para verse entera en cualquier pantalla al probarla. */
+  #escenario{width:1280px;height:720px;transform-origin:top left;position:absolute;top:0;left:0;display:flex;flex-direction:column;padding:48px 56px}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:auto}
+  .marca{font-size:20px;font-weight:700;letter-spacing:.5px}
+  .marca span{color:var(--gold)}
+  .estado{display:flex;align-items:center;gap:10px;font-size:15px;color:var(--muted)}
+  .punto{width:10px;height:10px;border-radius:50%;background:var(--muted);transition:background .3s}
+  .punto.conectando{background:var(--gold);animation:latir 1s infinite}
+  .punto.vivo{background:var(--ok)}
+  .punto.error{background:var(--bad)}
+  @keyframes latir{50%{opacity:.3}}
+  #espera{margin:auto;text-align:center}
+  #espera h1{font-size:52px;font-weight:800;letter-spacing:-1px}
+  #espera h1 span{color:var(--gold)}
+  #espera p{margin-top:14px;font-size:20px;color:var(--muted)}
+  #comenzar{margin-top:36px;background:var(--gold);color:#1a1a1a;border:0;border-radius:10px;padding:16px 40px;font-family:inherit;font-size:19px;font-weight:600;cursor:pointer}
+  #comenzar:hover{background:var(--gold-dim)}
+  #comenzar:disabled{opacity:.5;cursor:default}
+  #caso{display:none;margin:auto 0;width:100%}
+  #caso.visible{display:block}
+  .etiqueta{color:var(--gold);font-size:17px;font-weight:600;letter-spacing:2.5px;text-transform:uppercase}
+  #caso-titulo{font-size:40px;font-weight:700;margin:10px 0 30px;letter-spacing:-.5px}
+  #caso-datos{list-style:none;columns:2;column-gap:44px}
+  #caso-datos li{background:var(--card);border-left:3px solid var(--gold);border-radius:0 8px 8px 0;padding:13px 18px;margin-bottom:11px;font-size:20px;line-height:1.3;break-inside:avoid}
+  footer{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;font-size:14px;color:var(--muted)}
+  #consola{max-height:96px;overflow:hidden;text-align:right;font-family:ui-monospace,monospace;font-size:12px;line-height:1.55;color:#5f5f5f}
+  body.limpio footer{visibility:hidden}
+</style>
+</head>
+<body>
+<div id="escenario">
+  <header>
+    <div class="marca">Start <span>Lab</span> · Business IQ Test</div>
+    <div class="estado"><span class="punto" id="punto"></span><span id="estado-txt">Sin conectar</span></div>
+  </header>
+
+  <div id="espera">
+    <h1>Business <span>IQ Test</span></h1>
+    <p>Dos casos reales. Unos 15 minutos.</p>
+    <button id="comenzar">Comenzar la sesión</button>
+  </div>
+
+  <section id="caso">
+    <div class="etiqueta" id="caso-etiqueta">Caso 1</div>
+    <h2 id="caso-titulo"></h2>
+    <ul id="caso-datos"></ul>
+  </section>
+
+  <footer>
+    <div>Start Lab · sesión asistida por IA</div>
+    <div id="consola"></div>
+  </footer>
+</div>
+
+<audio id="voz" autoplay></audio>
+
+<script>
+const params = new URLSearchParams(location.search);
+const TOKEN  = params.get("t") || "";
+const AUTO   = params.get("auto") === "1";   // el bot de Recall no puede hacer clic
+if (params.get("limpio") === "1") document.body.classList.add("limpio");
+
+const SDP_URL = "https://api.openai.com/v1/realtime/calls";
+
+const el = {
+  punto:    document.getElementById("punto"),
+  estado:   document.getElementById("estado-txt"),
+  espera:   document.getElementById("espera"),
+  boton:    document.getElementById("comenzar"),
+  caso:     document.getElementById("caso"),
+  etiqueta: document.getElementById("caso-etiqueta"),
+  titulo:   document.getElementById("caso-titulo"),
+  datos:    document.getElementById("caso-datos"),
+  consola:  document.getElementById("consola"),
+  voz:      document.getElementById("voz")
+};
+
+let CASOS = [];
+let pc = null, canal = null;
+
+/* La pagina mide 1280x720 fijos porque eso es lo que transmite el bot. Al
+   abrirla en un navegador cualquiera se escala para verla entera. */
+function escalar(){
+  const f = Math.min(window.innerWidth/1280, window.innerHeight/720);
+  const e = document.getElementById("escenario");
+  e.style.transform = "scale(" + f + ")";
+  e.style.left = ((window.innerWidth  - 1280*f)/2) + "px";
+  e.style.top  = ((window.innerHeight -  720*f)/2) + "px";
+}
+window.addEventListener("resize", escalar);
+escalar();
+
+function log(txt){
+  const t = new Date().toLocaleTimeString("es-CL", {hour12:false});
+  el.consola.innerHTML = t + " " + txt + "<br>" + el.consola.innerHTML;
+  console.log("[sala]", txt);
+}
+
+function estado(txt, clase){
+  el.estado.textContent = txt;
+  el.punto.className = "punto" + (clase ? " " + clase : "");
+}
+
+function mostrarCaso(numero){
+  const c = CASOS.find(function(x){ return x.numero === numero; });
+  if (!c) { log("caso " + numero + " inexistente"); return false; }
+  el.espera.style.display = "none";
+  el.etiqueta.textContent = "Caso " + c.numero + " de " + CASOS.length;
+  el.titulo.textContent = c.titulo.replace(/^Caso \d+\s*[—-]\s*/, "");
+  el.datos.innerHTML = "";
+  c.lineas.forEach(function(linea){
+    const li = document.createElement("li");
+    li.textContent = linea;
+    el.datos.appendChild(li);
+  });
+  el.caso.classList.add("visible");
+  log("caso " + numero + " en pantalla");
+  // TODO (Fase B): mandarlo tambien al chat de la reunion. Necesita el bot de
+  // Recall, que todavia no existe. Se deja el enganche explicito para no
+  // inventar plomeria que no se puede probar todavia.
+  return true;
+}
+
+function terminar(motivo){
+  log("fin: " + motivo);
+  estado("Sesión finalizada", "");
+  el.caso.classList.remove("visible");
+  el.espera.style.display = "block";
+  el.espera.innerHTML = "<h1>Gracias</h1><p>La sesión terminó. Ya podés cerrar la ventana.</p>";
+  try { if (canal) canal.close(); if (pc) pc.close(); } catch(e){}
+}
+
+/* Las herramientas del guion llegan por el canal de datos. Hay que contestarle
+   SIEMPRE al modelo con un function_call_output: si no, se queda esperando la
+   respuesta y deja de hablar en medio de la sesion. */
+function manejarEvento(ev){
+  if (ev.type === "response.function_call_arguments.done") {
+    let args = {};
+    try { args = JSON.parse(ev.arguments || "{}"); } catch(e){}
+    let salida = {ok:true};
+
+    if (ev.name === "mostrar_caso") {
+      salida.ok = mostrarCaso(Number(args.numero));
+    } else if (ev.name === "terminar_sesion") {
+      terminar(args.motivo || "sin motivo");
+    } else {
+      salida = {ok:false, error:"herramienta desconocida"};
+      log("herramienta rara: " + ev.name);
+    }
+
+    canal.send(JSON.stringify({
+      type: "conversation.item.create",
+      item: {type:"function_call_output", call_id: ev.call_id, output: JSON.stringify(salida)}
+    }));
+    if (ev.name !== "terminar_sesion") {
+      canal.send(JSON.stringify({type:"response.create"}));
+    }
+  }
+  else if (ev.type === "conversation.item.input_audio_transcription.completed") {
+    log("candidato: " + String(ev.transcript || "").slice(0, 70));
+  }
+  else if (ev.type === "error") {
+    log("ERROR " + JSON.stringify(ev.error).slice(0, 140));
+  }
+}
+
+async function conectar(){
+  el.boton.disabled = true;
+  try {
+    estado("Pidiendo la clave...", "conectando");
+    const r = await fetch("/api/iq/clave?t=" + encodeURIComponent(TOKEN), {method:"POST"});
+    if (!r.ok) throw new Error("clave: " + r.status + " " + (await r.text()).slice(0,140));
+    const datos = await r.json();
+    CASOS = datos.casos || [];
+    log("clave lista, " + CASOS.length + " casos cargados");
+
+    estado("Pidiendo el micrófono...", "conectando");
+    const mic = await navigator.mediaDevices.getUserMedia({audio:true});
+
+    pc = new RTCPeerConnection();
+    pc.ontrack = function(e){ el.voz.srcObject = e.streams[0]; };
+    pc.addTrack(mic.getTracks()[0], mic);
+
+    canal = pc.createDataChannel("oai-events");
+    canal.onmessage = function(e){ try { manejarEvento(JSON.parse(e.data)); } catch(err){} };
+    canal.onopen = function(){ estado("En sesión", "vivo"); log("canal abierto"); };
+
+    const oferta = await pc.createOffer();
+    await pc.setLocalDescription(oferta);
+
+    estado("Conectando con la voz...", "conectando");
+    const resp = await fetch(SDP_URL, {
+      method: "POST",
+      body: oferta.sdp,
+      headers: {Authorization: "Bearer " + datos.clave, "Content-Type": "application/sdp"}
+    });
+    if (!resp.ok) throw new Error("sdp: " + resp.status + " " + (await resp.text()).slice(0,160));
+
+    await pc.setRemoteDescription({type:"answer", sdp: await resp.text()});
+    log("conectado");
+  } catch (e) {
+    estado("Error", "error");
+    log(String(e.message || e));
+    el.boton.disabled = false;
+  }
+}
+
+el.boton.addEventListener("click", conectar);
+if (AUTO) conectar();
+</script>
+</body>
+</html>

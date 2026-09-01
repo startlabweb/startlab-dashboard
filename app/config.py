@@ -68,5 +68,19 @@ class Settings:
     # baja solo el audio, asi que el disco no es la restriccion.
     IQ_MAX_RECORDING_MB: int = int(os.getenv("IQ_MAX_RECORDING_MB", "3000"))
 
+    # --- La sala del IQ Test (la IA que conduce la sesion) ---
+
+    # Puerta de la sala. Crear una clave efimera gasta plata y la URL del
+    # dashboard es publica, asi que sin token cualquiera puede quemar credito de
+    # OpenAI. Vacio = sala abierta, comodo para probar en local; en Railway TIENE
+    # que estar seteada.
+    IQ_SALA_TOKEN: str = os.getenv("IQ_SALA_TOKEN", "")
+
+    # Que modelo de voz conduce la sesion. El grande entiende mejor cuando hay
+    # que repreguntar; el mini cuesta como un tercio. Se arranca con el grande
+    # para ver el techo de calidad y se baja despues sin tocar codigo.
+    IQ_MODELO_VOZ: str = os.getenv("IQ_MODELO_VOZ", "gpt-realtime-2.1")
+    IQ_VOZ: str = os.getenv("IQ_VOZ", "marin")
+
 
 settings = Settings()

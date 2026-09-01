@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import settings
-from app.api import monitors, criteria, candidates, sheets, events, health
+from app.api import monitors, criteria, candidates, sheets, events, health, iq_agente
 from app.worker.manager import worker_manager
 
 log = logging.getLogger("app.main")
@@ -74,6 +74,7 @@ app.include_router(sheets.router, prefix="/api/sheets", tags=["sheets"])
 app.include_router(criteria.router, prefix="/api/monitors", tags=["criteria"])
 app.include_router(candidates.router, prefix="/api/monitors", tags=["candidates"])
 app.include_router(events.router, prefix="/api/monitors", tags=["events"])
+app.include_router(iq_agente.router, prefix="/api/iq", tags=["iq"])
 
 
 # --- Page routes ---
@@ -93,3 +94,15 @@ async def monitor_detail_page(request: Request, monitor_id: str):
     return templates.TemplateResponse(
         request=request, name="monitor_detail.html", context={"monitor_id": monitor_id}
     )
+
+
+@app.get("/iq/sala", response_class=HTMLResponse)
+async def iq_sala_page(request: Request):
+    """La sala del Business IQ Test.
+
+    Esta pagina ES el entrevistador: habla con OpenAI Realtime por WebRTC y
+    muestra el caso en pantalla. Cuando entre Recall, el bot va a abrir esta
+    misma URL y transmitir su audio y su video a la reunion de Zoom. Mientras
+    tanto se prueba abriendola en un navegador y hablandole.
+    """
+    return templates.TemplateResponse(request=request, name="iq_sala.html")
