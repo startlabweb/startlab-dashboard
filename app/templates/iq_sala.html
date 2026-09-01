@@ -72,6 +72,7 @@ const params = new URLSearchParams(location.search);
 const TOKEN  = params.get("t") || "";
 const SESION = params.get("s") || "";        // el candidato de esta sesion
 const NOMBRE = params.get("n") || "";
+const MONITOR = params.get("m") || "";   // solo para sesiones de prueba
 const AUTO   = params.get("auto") === "1";   // el bot de Recall no puede hacer clic
 if (params.get("limpio") === "1") document.body.classList.add("limpio");
 
@@ -117,7 +118,7 @@ async function enviarTranscripcion(final){
     await fetch("/api/iq/transcripcion", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({t: TOKEN, sesion: SESION, texto: TURNOS.join("\n"), final: !!final})
+      body: JSON.stringify({t: TOKEN, sesion: SESION, texto: TURNOS.join("\n"), final: !!final, monitor_id: MONITOR})
     });
     if (final) log("transcripcion final enviada (" + TURNOS.length + " turnos)");
   } catch (e) {

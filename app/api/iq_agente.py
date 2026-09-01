@@ -27,9 +27,10 @@ log = get_logger("iq_agente")
 
 class TranscripcionRequest(BaseModel):
     t: str | None = None      # token de la sala
-    sesion: str               # token del candidato
+    sesion: str               # token del candidato, o "prueba-..." para un ensayo
     texto: str
     final: bool = False
+    monitor_id: str | None = None   # solo en modo prueba, para saber donde anotarla
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 GUION = RAIZ / "prompts" / "consultor_iq_agente.md"
@@ -222,6 +223,20 @@ async def guardar_transcripcion(req: TranscripcionRequest):
     lo dicho hasta ahi ya esta guardado y la sesion se puede corregir igual.
     """
     _verificar_token(req.t)
+
+    # Modo prueba: una sesion de ensayo, sin candidato detras. La transcripcion
+    # va al registro de actividad del monitor en vez de a una ficha, asi se puede
+    # probar la sala de punta a punta sin marcar a nadie real y sin depender de
+    # que la migracion 005 este corrida.
+    if req.sesion.startswith("prueba-"):
+        db.log_activity(
+            req.monitor_id or "",
+            "iq_prueba",
+            f"Sesion de prueba {req.sesion}: {len(req.texto)} caracteres"
+            + (" (final)" if req.final else ""),
+            {"transcripcion": req.texto, "final": req.final},
+        )
+        return {"ok": True, "prueba": True, "guardado": len(req.texto)}
 
     r = (
         db.get_db()
