@@ -174,7 +174,13 @@ async def crear_clave(t: str | None = Query(None), n: str | None = Query(None)):
                 "input": {
                     # Sin esto no hay transcripcion de lo que dice el candidato,
                     # que es exactamente lo unico que despues se puntua.
-                    "transcription": {"model": "gpt-4o-transcribe"},
+                    #
+                    # `language` NO es opcional: sin fijarlo, el modelo adivina
+                    # el idioma en cada turno y con el audio pasando por Zoom,
+                    # Recall y la mezcla se equivoca. En la segunda prueba real
+                    # transcribio una respuesta en arabe y convirtio "setters" en
+                    # "haters" -- una palabra asi cambia la evaluacion entera.
+                    "transcription": {"model": "gpt-4o-transcribe", "language": "es"},
                     "turn_detection": {"type": "semantic_vad"},
                 },
                 "output": {"voice": settings.IQ_VOZ},

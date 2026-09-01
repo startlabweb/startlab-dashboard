@@ -107,8 +107,27 @@ let enviando = false, pendiente = false;
 function anotar(quien, texto){
   const t = String(texto || "").trim();
   if (!t) return;
+  if (quien === "CANDIDATO") hablo = true;   // ya hay alguien del otro lado
   TURNOS.push(quien + ": " + t);
   enviarTranscripcion(false);
+}
+
+/* El bot entra a la reunion en 6 segundos y el candidato tarda medio minuto en
+   abrir el Zoom. En la segunda prueba real la IA saludo a una sala vacia y el
+   candidato, al llegar, se encontro con silencio y tuvo que decir "hola".
+   Por eso el saludo espera un rato y se repite mientras nadie conteste. */
+const ESPERA_SALUDO = 12000, REINTENTO_SALUDO = 22000, MAX_SALUDOS = 4;
+let hablo = false, saludos = 0;
+
+function programarSaludo(){
+  setTimeout(function reintentar(){
+    if (hablo || cerrando || saludos >= MAX_SALUDOS) return;
+    if (!canal || canal.readyState !== "open") return;
+    saludos++;
+    log("saludo " + saludos + " (nadie contesto todavia)");
+    canal.send(JSON.stringify({type:"response.create"}));
+    setTimeout(reintentar, REINTENTO_SALUDO);
+  }, ESPERA_SALUDO);
 }
 
 async function enviarTranscripcion(final){
@@ -239,14 +258,7 @@ function manejarEvento(ev){
     anotar("ENTREVISTADOR", ev.transcript);
   }
   else if (ev.type === "session.created" || ev.type === "session.updated") {
-    /* Recien aca la sesion existe del otro lado. Mandar el saludo en
-       `canal.onopen` era demasiado temprano y se perdia: en las dos primeras
-       pruebas hubo que decirle "hola" para que arrancara. */
-    if (!arranco) {
-      arranco = true;
-      log("sesion lista, pidiendo el saludo");
-      canal.send(JSON.stringify({type:"response.create"}));
-    }
+    if (!arranco) { arranco = true; programarSaludo(); }
   }
   else if (ev.type === "response.done") {
     // Si ya se pidio terminar, este es el final de la despedida: se le da un
@@ -282,15 +294,9 @@ async function conectar(){
       estado("En sesión", "vivo");
       log("canal abierto");
       el.pista.textContent = "Si no escuchás nada, decí «hola» para empezar.";
-      /* Ultimo recurso: si a los 4 segundos la sesion nunca aviso que estaba
-         lista, se pide el saludo igual. Es mejor un saludo repetido que un
-         silencio en el que nadie arranca. */
+      /* Respaldo: si la sesion nunca avisa que esta lista, se programa igual. */
       setTimeout(function(){
-        if (!arranco && canal && canal.readyState === "open") {
-          arranco = true;
-          log("sesion sin avisar, pido el saludo igual");
-          canal.send(JSON.stringify({type:"response.create"}));
-        }
+        if (!arranco) { arranco = true; log("sesion sin avisar, saludo igual"); programarSaludo(); }
       }, 4000);
     };
 
