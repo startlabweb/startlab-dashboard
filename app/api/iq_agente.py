@@ -14,12 +14,22 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+
+from app import database as db
 
 from app.config import settings
 from tools.logger import get_logger
 
 router = APIRouter()
 log = get_logger("iq_agente")
+
+
+class TranscripcionRequest(BaseModel):
+    t: str | None = None      # token de la sala
+    sesion: str               # token del candidato
+    texto: str
+    final: bool = False
 
 RAIZ = Path(__file__).resolve().parent.parent.parent
 GUION = RAIZ / "prompts" / "consultor_iq_agente.md"
@@ -136,7 +146,7 @@ async def casos(t: str | None = Query(None)):
 
 
 @router.post("/clave")
-async def crear_clave(t: str | None = Query(None)):
+async def crear_clave(t: str | None = Query(None), n: str | None = Query(None)):
     """Crea la clave efimera de OpenAI Realtime, ya atada al guion y a la voz."""
     _verificar_token(t)
 
@@ -146,6 +156,13 @@ async def crear_clave(t: str | None = Query(None)):
         raise HTTPException(status_code=500, detail=f"Falta {GUION.name}")
 
     instrucciones = GUION.read_text(encoding="utf-8")
+    if n:
+        # El saludo por el nombre se agrega aca y no en el navegador: las
+        # instrucciones nunca bajan al cliente.
+        instrucciones += (
+            "\n\n## EL CANDIDATO DE ESTA SESION\n\n"
+            f"Se llama {n}. Saludalo por su nombre al abrir."
+        )
 
     cuerpo = {
         "session": {
@@ -189,3 +206,55 @@ async def crear_clave(t: str | None = Query(None)):
         "modelo": settings.IQ_MODELO_VOZ,
         "casos": _casos_para_pantalla(),
     }
+
+
+@router.post("/transcripcion")
+async def guardar_transcripcion(req: TranscripcionRequest):
+    """Guarda lo que se dijo en la sesion. La manda la propia sala, en vivo.
+
+    Por que no se usa la transcripcion de Recall ni un webhook: OpenAI Realtime
+    ya emite quien dijo cada cosa mientras la sesion ocurre, y la rubrica
+    NECESITA esa separacion -- tiene la regla de no darle credito al candidato
+    por lo que dijo el entrevistador. Ademas sale gratis y no hay que verificar
+    firmas de nadie.
+
+    Se recibe de a pedazos y no solo al final: si el bot se cae en el minuto 12,
+    lo dicho hasta ahi ya esta guardado y la sesion se puede corregir igual.
+    """
+    _verificar_token(req.t)
+
+    r = (
+        db.get_db()
+        .table("candidates")
+        .select("id,name,monitor_id,iq_status")
+        .eq("iq_session_token", req.sesion)
+        .limit(1)
+        .execute()
+    )
+    if not r.data:
+        raise HTTPException(status_code=404, detail="Sesion desconocida")
+    c = r.data[0]
+
+    cambios: dict = {"iq_transcript": req.texto, "iq_source_kind": "recall"}
+
+    if req.final:
+        # Recien con la sesion cerrada entra a la cola de evaluacion. Antes no:
+        # se estaria puntuando una conversacion a medias.
+        cambios.update(
+            {
+                "iq_status": "pending",
+                "iq_bot_status": "terminado",
+                "attempts": 0,
+                "worker_id": None,
+                "lease_expires_at": db.EPOCH,
+            }
+        )
+        db.log_activity(
+            c["monitor_id"],
+            "iq_sesion_terminada",
+            f"{c.get('name')}: sesion cerrada ({len(req.texto)} caracteres), a la cola de correccion",
+        )
+        log.info(f"{c.get('name')}: sesion terminada, {len(req.texto)} chars")
+
+    db.update_candidate(c["id"], cambios)
+    return {"ok": True, "guardado": len(req.texto), "final": req.final}

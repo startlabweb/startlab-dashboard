@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import settings
-from app.api import monitors, criteria, candidates, sheets, events, health, iq_agente
+from app.api import monitors, criteria, candidates, sheets, events, health, iq_agente, iq_sesion
 from app.worker.manager import worker_manager
 
 log = logging.getLogger("app.main")
@@ -75,6 +75,8 @@ app.include_router(criteria.router, prefix="/api/monitors", tags=["criteria"])
 app.include_router(candidates.router, prefix="/api/monitors", tags=["candidates"])
 app.include_router(events.router, prefix="/api/monitors", tags=["events"])
 app.include_router(iq_agente.router, prefix="/api/iq", tags=["iq"])
+# El link del correo del candidato. Va bajo /iq y no /api: lo abre una persona.
+app.include_router(iq_sesion.router, prefix="/iq", tags=["iq"])
 
 
 # --- Page routes ---

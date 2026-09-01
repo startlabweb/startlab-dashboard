@@ -25,6 +25,7 @@ import urllib.error
 import urllib.request
 
 TIMEOUT_ENTRADA = 180  # segundos esperando que entre antes de darlo por fallido
+VARIANTE = os.getenv("RECALL_VARIANTE", "web_4_core")  # web_4_core | web_gpu
 NOMBRE_BOT = "Asistente Start Lab"  # sin "bot" ni "IA": algunas salas los filtran
 
 
@@ -89,6 +90,17 @@ def crear_bot(
         "bot_name": nombre,
         "output_media": {
             "camera": {"kind": "webpage", "config": {"url": pagina_url}}
+        },
+        # La variante por defecto corre en una maquina chica, y aca el bot tiene
+        # que renderizar la pagina Y sostener una sesion de voz en tiempo real al
+        # mismo tiempo. Con la chica el audio sale entrecortado -- pasó en la
+        # primera prueba y es la causa que la propia documentacion de Recall
+        # senala para el audio cortado. Cuesta un poco mas por hora y es la
+        # diferencia entre una sesion presentable y una que da verguenza.
+        "variant": {
+            "zoom": VARIANTE,
+            "google_meet": VARIANTE,
+            "microsoft_teams": VARIANTE,
         },
     }
     if join_at:
@@ -177,7 +189,10 @@ def main():
         try:
             input()
         except EOFError:
-            time.sleep(600)
+            # Sin terminal interactiva (lanzado por un agente o un cron): se
+            # queda el tiempo de una sesion larga y despues se saca solo. El bot
+            # se cobra por minuto, asi que no puede quedar colgado para siempre.
+            time.sleep(int(os.getenv("RECALL_ESPERA_SEG", "1800")))
     finally:
         print("\nSacando el bot de la llamada...")
         sacar(bot_id)

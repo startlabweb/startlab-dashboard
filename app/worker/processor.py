@@ -669,10 +669,17 @@ def _process_iq(monitor, candidate, candidate_id, emit_event):
     file_id = candidate.get("iq_source_file_id")
     kind = candidate.get("iq_source_kind") or "recording"
 
-    if not file_id:
-        # No deberia pasar (el ciclo de gates escribe el file_id y el 'pending' en
-        # el mismo update), pero si pasa el candidato vuelve a esperar en vez de
-        # fallar tres veces.
+    # Que tiene que existir para poder evaluar depende de la fuente: la sesion
+    # conducida por la IA no tiene archivo en Drive, tiene el texto ya guardado.
+    falta = (
+        not (candidate.get("iq_transcript") or "").strip()
+        if kind == "recall"
+        else not file_id
+    )
+    if falta:
+        # No deberia pasar (quien pone 'pending' escribe la fuente en el mismo
+        # update), pero si pasa el candidato vuelve a esperar en vez de fallar
+        # tres veces y quemar sus intentos.
         db.update_candidate(candidate_id, {"iq_status": "waiting"})
         return
 
@@ -693,7 +700,16 @@ def _process_iq(monitor, candidate, candidate_id, emit_event):
         db.update_candidate(candidate_id, {"iq_status": "processing"})
         emit_event({"type": "processing", "phase": "iq", "name": name, "row": sheet_row})
 
-        if kind == "transcript":
+        if kind == "recall":
+            # La sesion la condujo la IA: la propia sala fue guardando lo que se
+            # dijo, con quien lo dijo, mientras ocurria. No hay nada que bajar ni
+            # que transcribir, y la separacion de hablantes ya viene hecha --
+            # que es lo que la rubrica necesita para no darle credito al
+            # candidato por lo que dijo el entrevistador.
+            texto = candidate.get("iq_transcript") or ""
+            datos = {"text": texto, "duracion_segundos": 0}
+            costo = 0.02
+        elif kind == "transcript":
             texto = exportar_texto(file_id)
             datos = {"text": texto, "duracion_segundos": 0}
             costo = 0.02

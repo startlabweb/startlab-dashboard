@@ -49,7 +49,7 @@
 
   <div id="espera">
     <h1>Business <span>IQ Test</span></h1>
-    <p>Dos casos reales. Unos 15 minutos.</p>
+    <p id="pista">Dos casos reales. Unos 15 minutos.</p>
     <button id="comenzar">Comenzar la sesión</button>
   </div>
 
@@ -70,6 +70,8 @@
 <script>
 const params = new URLSearchParams(location.search);
 const TOKEN  = params.get("t") || "";
+const SESION = params.get("s") || "";        // el candidato de esta sesion
+const NOMBRE = params.get("n") || "";
 const AUTO   = params.get("auto") === "1";   // el bot de Recall no puede hacer clic
 if (params.get("limpio") === "1") document.body.classList.add("limpio");
 
@@ -85,11 +87,46 @@ const el = {
   titulo:   document.getElementById("caso-titulo"),
   datos:    document.getElementById("caso-datos"),
   consola:  document.getElementById("consola"),
+  pista:    document.getElementById("pista"),
   voz:      document.getElementById("voz")
 };
 
 let CASOS = [];
 let pc = null, canal = null;
+
+/* La transcripcion se arma aca, con quien dijo cada cosa. Es la fuente de la
+   nota: la rubrica tiene la regla de no darle credito al candidato por lo que
+   dijo el entrevistador, asi que sin separar hablantes no se puede corregir.
+   Se manda en pedazos y no solo al final: si el bot se cae en el minuto 12, lo
+   dicho hasta ahi ya quedo guardado. */
+const TURNOS = [];
+let enviando = false, pendiente = false;
+
+function anotar(quien, texto){
+  const t = String(texto || "").trim();
+  if (!t) return;
+  TURNOS.push(quien + ": " + t);
+  enviarTranscripcion(false);
+}
+
+async function enviarTranscripcion(final){
+  if (!SESION) return;                 // probando a mano, sin candidato detras
+  if (enviando && !final) { pendiente = true; return; }
+  enviando = true;
+  try {
+    await fetch("/api/iq/transcripcion", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({t: TOKEN, sesion: SESION, texto: TURNOS.join("\n"), final: !!final})
+    });
+    if (final) log("transcripcion final enviada (" + TURNOS.length + " turnos)");
+  } catch (e) {
+    log("no se pudo guardar la transcripcion: " + e);
+  } finally {
+    enviando = false;
+    if (pendiente && !final) { pendiente = false; enviarTranscripcion(false); }
+  }
+}
 
 /* La pagina mide 1280x720 fijos porque eso es lo que transmite el bot. Al
    abrirla en un navegador cualquiera se escala para verla entera. */
@@ -136,6 +173,7 @@ function mostrarCaso(numero){
 
 function terminar(motivo){
   log("fin: " + motivo);
+  enviarTranscripcion(true);   // cierra la sesion y la manda a la cola de correccion
   estado("Sesión finalizada", "");
   el.caso.classList.remove("visible");
   el.espera.style.display = "block";
@@ -170,7 +208,11 @@ function manejarEvento(ev){
     }
   }
   else if (ev.type === "conversation.item.input_audio_transcription.completed") {
+    anotar("CANDIDATO", ev.transcript);
     log("candidato: " + String(ev.transcript || "").slice(0, 70));
+  }
+  else if (ev.type === "response.output_audio_transcript.done") {
+    anotar("ENTREVISTADOR", ev.transcript);
   }
   else if (ev.type === "error") {
     log("ERROR " + JSON.stringify(ev.error).slice(0, 140));
@@ -181,7 +223,8 @@ async function conectar(){
   el.boton.disabled = true;
   try {
     estado("Pidiendo la clave...", "conectando");
-    const r = await fetch("/api/iq/clave?t=" + encodeURIComponent(TOKEN), {method:"POST"});
+    const r = await fetch("/api/iq/clave?t=" + encodeURIComponent(TOKEN) +
+                          "&n=" + encodeURIComponent(NOMBRE), {method:"POST"});
     if (!r.ok) throw new Error("clave: " + r.status + " " + (await r.text()).slice(0,140));
     const datos = await r.json();
     CASOS = datos.casos || [];
@@ -196,7 +239,15 @@ async function conectar(){
 
     canal = pc.createDataChannel("oai-events");
     canal.onmessage = function(e){ try { manejarEvento(JSON.parse(e.data)); } catch(err){} };
-    canal.onopen = function(){ estado("En sesión", "vivo"); log("canal abierto"); };
+    canal.onopen = function(){
+      estado("En sesión", "vivo");
+      log("canal abierto");
+      /* La IA saluda primero. Sin esto se queda muda esperando a que hable el
+         candidato, y el candidato espera a que hable la IA: nadie arranca.
+         Pasó en la primera prueba -- hubo que decirle "hola" para que empezara. */
+      canal.send(JSON.stringify({type:"response.create"}));
+      el.pista.textContent = "Si no escuchás nada, decí «hola» para empezar.";
+    };
 
     const oferta = await pc.createOffer();
     await pc.setLocalDescription(oferta);
