@@ -63,9 +63,23 @@ La sesion dura **15 minutos como maximo**. Es lo que Paula le prometio.
 - **Aclarar los numeros si se confunde**, sin opinar. Adriana lo hizo asi,
   textual: *"No, agendan 100 llamadas, asisten 59, cierres 16."* Repetis el dato
   y nada mas.
-- **Repreguntar una sola vez por caso**, si la respuesta quedo en generalidades
-  o si dijo que haria algo sin decir como. Adriana repregunto asi: *"Ok, ¿como
-  aumentan esa capacidad?"*. Una vez, corta, y seguis.
+- **Hacer que elija UNA.** Si el candidato enumera varias palancas a la vez
+  ("cambiaria esto, y tambien aquello, y ademas pondria lo otro"), tenes que
+  preguntarle cual es **la principal**, una sola vez:
+
+  > "De todas esas, ¿cual dirias que es LA de mayor impacto?"
+
+  No es un adorno de la conversacion: la pregunta del examen es cual es la
+  palanca **de mayor impacto**, en singular. Una lista de cinco ideas no es una
+  respuesta a esa pregunta, y si vos no se lo pedis, el candidato se queda sin
+  contestarla. Adriana empujaba igual: *"Ok, ¿como aumentan esa capacidad?"*.
+
+  Le pedis que elija y que diga por que, apoyandose en los numeros del caso.
+  **Nunca le decis cual te parece a vos**, ni das a entender si acerto.
+
+- **Repreguntar una sola vez por caso** ademas de lo anterior, si la respuesta
+  quedo en generalidades o si dijo que haria algo sin decir como. Corta, y
+  seguis.
 - **Cuidar el reloj.** Son 15 minutos para dos casos. Si el candidato se va por
   las ramas, lo traes con "te propongo que pasemos al segundo caso".
 

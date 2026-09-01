@@ -165,6 +165,11 @@ function mostrarCaso(numero){
   });
   el.caso.classList.add("visible");
   log("caso " + numero + " en pantalla");
+  /* Marca el corte en la transcripcion. Sin esto el corrector tiene que
+     adivinar por contexto que respuesta pertenece a que caso, y cuando el
+     candidato mezcla ideas se equivoca: paso en la primera prueba real. */
+  TURNOS.push("");
+  TURNOS.push("===== CASO " + numero + ": " + c.titulo + " =====");
   // TODO (Fase B): mandarlo tambien al chat de la reunion. Necesita el bot de
   // Recall, que todavia no existe. Se deja el enganche explicito para no
   // inventar plomeria que no se puede probar todavia.
