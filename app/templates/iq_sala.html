@@ -112,19 +112,19 @@ function anotar(quien, texto){
   enviarTranscripcion(false);
 }
 
-/* El bot entra a la reunion en 6 segundos y el candidato tarda medio minuto en
-   abrir el Zoom. En la segunda prueba real la IA saludo a una sala vacia y el
-   candidato, al llegar, se encontro con silencio y tuvo que decir "hola".
+/* Cuando saluda la IA. El bot entra a la reunion en 6 segundos y el candidato
+   tarda medio minuto en abrir el Zoom, asi que saludar al conectarse es hablarle
+   a una sala vacia: el candidato llega, encuentra silencio y tiene que decir
+   "hola". Paso en las dos primeras pruebas.
 
-   La solucion no es esperar un rato fijo sino ESCUCHAR la sala: Recall le mete
-   el audio mezclado de la reunion al microfono de esta pagina, asi que una sala
-   vacia es silencio y la llegada de alguien se oye (el tono de Zoom, su ruido
-   de fondo, su respiracion). Se calibra el piso de silencio durante los
-   primeros segundos y se saluda cuando el nivel lo supera de forma sostenida.
+   Se probo tambien deducirlo del audio de la sala, y es peor: el ruido de la
+   conexion dispara el saludo ANTES de que la persona este adentro de verdad, y
+   se la encuentra hablando sola.
 
-   El temporizador queda igual, de respaldo, por si el candidato entra con el
-   microfono apagado en una habitacion muda. */
-const REINTENTO_SALUDO = 25000, MAX_SALUDOS = 4, RESPALDO_SALUDO = 45000;
+   La senal buena la da Recall, que avisa por webhook cuando entra un
+   participante. El temporizador queda solo de respaldo, para el caso de que ese
+   aviso no llegue nunca. */
+const REINTENTO_SALUDO = 25000, MAX_SALUDOS = 4, RESPALDO_SALUDO = 90000;
 let hablo = false, saludos = 0;
 
 function saludar(motivo){
@@ -141,34 +141,27 @@ function programarSaludo(){
   setTimeout(function(){ saludar("respaldo por tiempo"); }, RESPALDO_SALUDO);
 }
 
-function escucharLaSala(stream){
-  let ctx;
-  try { ctx = new (window.AudioContext || window.webkitAudioContext)(); }
-  catch (e) { log("sin AudioContext, queda solo el respaldo por tiempo"); return; }
-
-  const analizador = ctx.createAnalyser();
-  analizador.fftSize = 512;
-  ctx.createMediaStreamSource(stream).connect(analizador);
-  const buf = new Float32Array(analizador.fftSize);
-
-  let piso = 0, muestras = 0, seguidas = 0;
+/* Escuchar el audio de la sala para adivinar si el candidato llego NO funciona:
+   el ruido de la conexion dispara antes de que la persona este realmente
+   adentro, y se encuentra a la IA ya hablando. La senal exacta la da Recall, que
+   avisa por webhook cuando entra un participante; el servidor lo anota y aca
+   solo se pregunta. */
+function esperarAlCandidato(){
+  if (!SESION) { saludar("sin sesion, es una prueba a mano"); return; }
   const reloj = setInterval(function(){
     if (hablo || cerrando || saludos > 0) { clearInterval(reloj); return; }
-    analizador.getFloatTimeDomainData(buf);
-    let suma = 0;
-    for (let i = 0; i < buf.length; i++) suma += buf[i] * buf[i];
-    const nivel = Math.sqrt(suma / buf.length);
-
-    muestras++;
-    if (muestras <= 15) { piso = Math.max(piso, nivel); return; }  // 3 s de sala vacia
-
-    if (nivel > Math.max(piso * 4, 0.006)) seguidas++; else seguidas = 0;
-    if (seguidas >= 3) {                                   // ~0,6 s de sonido real
-      clearInterval(reloj);
-      log("se oye a alguien en la sala");
-      saludar("llego el candidato");
-    }
-  }, 200);
+    fetch("/api/iq/hay-alguien?t=" + encodeURIComponent(TOKEN) +
+          "&s=" + encodeURIComponent(SESION))
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        if (d && d.hay_alguien) {
+          clearInterval(reloj);
+          log("Recall avisa: el candidato entro");
+          saludar("llego el candidato");
+        }
+      })
+      .catch(function(){});
+  }, 2000);
 }
 
 async function enviarTranscripcion(final){
@@ -328,7 +321,7 @@ async function conectar(){
     pc = new RTCPeerConnection();
     pc.ontrack = function(e){ el.voz.srcObject = e.streams[0]; };
     pc.addTrack(mic.getTracks()[0], mic);
-    escucharLaSala(mic);   // para saludar recien cuando haya alguien
+    esperarAlCandidato();   // saluda recien cuando Recall avise que entro
 
     canal = pc.createDataChannel("oai-events");
     canal.onmessage = function(e){ try { manejarEvento(JSON.parse(e.data)); } catch(err){} };

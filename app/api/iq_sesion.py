@@ -102,7 +102,14 @@ async def entrar(token: str):
         f"&n={quote(nombre.split(' ')[0] if nombre else '')}"
     )
     try:
-        bot = recall.crear_bot(reunion["join_url"], pagina)
+        bot = recall.crear_bot(
+            reunion["join_url"],
+            pagina,
+            # Recall avisa aca cuando entra un participante, y recien
+            # entonces la IA saluda. El token viaja en la URL para no
+            # tener que cruzar el id del bot con nada.
+            webhook_llegada=f"{_base_publica()}/api/iq/llego?s={quote(token)}",
+        )
     except Exception as e:
         # Sin bot no hay sesion: se borra la reunion para no dejar salas
         # huerfanas y se deja el link utilizable para reintentar.

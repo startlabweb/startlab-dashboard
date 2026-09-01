@@ -279,3 +279,43 @@ async def guardar_transcripcion(req: TranscripcionRequest):
 
     db.update_candidate(c["id"], cambios)
     return {"ok": True, "guardado": len(req.texto), "final": req.final}
+
+
+# --- Quien esta en la reunion -------------------------------------------------
+#
+# Recall avisa por webhook cuando entra un participante, y el token de la sesion
+# viaja en la URL del webhook, asi que no hay que cruzar el id del bot con nada.
+#
+# Se guarda en memoria a proposito: es una senal que solo vale durante la sesion
+# y la contesta el mismo proceso que la recibe. Si el servicio se reinicia en el
+# medio, la sala cae en su respaldo por tiempo y saluda igual.
+_llegaron: set[str] = set()
+
+
+@router.post("/llego")
+async def llego_alguien(s: str = Query(...), payload: dict | None = None):
+    """Webhook de Recall: entro un participante a la reunion de esta sesion."""
+    # El propio bot cuenta como participante y entra primero: si contara, la IA
+    # saludaria a la sala vacia, que es exactamente el problema que esto resuelve.
+    nombre = ""
+    try:
+        datos = (payload or {}).get("data") or {}
+        participante = datos.get("participant") or datos.get("data") or {}
+        nombre = (participante.get("name") or "").strip()
+    except Exception:
+        pass
+
+    if nombre and "asistente start lab" in nombre.lower():
+        log.info(f"Sesion {s}: entro el propio bot, no cuenta")
+        return {"ok": True, "ignorado": "es el bot"}
+
+    _llegaron.add(s)
+    log.info(f"Sesion {s}: llego un participante ({nombre or 'sin nombre'})")
+    return {"ok": True}
+
+
+@router.get("/hay-alguien")
+async def hay_alguien(t: str | None = Query(None), s: str = Query(...)):
+    """La sala pregunta si ya puede saludar."""
+    _verificar_token(t)
+    return {"hay_alguien": s in _llegaron}

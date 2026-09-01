@@ -77,6 +77,7 @@ def crear_bot(
     pagina_url: str,
     nombre: str = NOMBRE_BOT,
     join_at: str | None = None,
+    webhook_llegada: str | None = None,
 ) -> dict:
     """Crea el bot que va a abrir `pagina_url` y transmitirla a la reunion.
 
@@ -105,6 +106,23 @@ def crear_bot(
     }
     if join_at:
         cuerpo["join_at"] = join_at
+    if webhook_llegada:
+        # Recall avisa a esta URL cuando entra un participante. Es la unica forma
+        # exacta de saber que el candidato ya esta adentro: escuchar el audio de
+        # la sala no sirve porque el ruido de la conexion dispara antes de que la
+        # persona este realmente en la reunion.
+        #
+        # El token de la sesion viaja EN la URL, asi no hay que cruzar el id del
+        # bot con nada del otro lado.
+        cuerpo["recording_config"] = {
+            "realtime_endpoints": [
+                {
+                    "type": "webhook",
+                    "url": webhook_llegada,
+                    "events": ["participant_events.join"],
+                }
+            ]
+        }
     return _api("POST", base + "/", clave, cuerpo)
 
 
@@ -170,7 +188,18 @@ def main():
     print(f"Reunion: {meeting_url}")
     print(f"Pagina : {pagina_url}\n")
 
-    bot = crear_bot(meeting_url, pagina_url)
+    # El webhook de llegada se arma con el mismo token de sesion que lleva la
+    # pagina, para que la prueba se comporte igual que el flujo real.
+    import urllib.parse as _up
+    q = _up.parse_qs(_up.urlparse(pagina_url).query)
+    sesion = (q.get("s") or [""])[0]
+    base_publica = pagina_url.split("/iq/sala")[0]
+    webhook = f"{base_publica}/api/iq/llego?s={_up.quote(sesion)}" if sesion else None
+    if webhook:
+        print(f"Webhook de llegada: {webhook}")
+        print()
+
+    bot = crear_bot(meeting_url, pagina_url, webhook_llegada=webhook)
     bot_id = bot.get("id")
     if not bot_id:
         raise SystemExit(f"No vino el id del bot: {bot}")
