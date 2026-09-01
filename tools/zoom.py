@@ -15,6 +15,7 @@ Usa una app Server-to-Server OAuth de la cuenta (ZOOM_ACCOUNT_ID / ZOOM_CLIENT_I
 
 import base64
 import json
+import secrets
 import os
 import time
 import urllib.error
@@ -108,12 +109,24 @@ def crear_reunion(
         "start_time": inicio.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "duration": duracion_min,
         "timezone": "UTC",
+        # Codigo de acceso propio, aleatorio y distinto por sesion. No es un
+        # adorno: la cuenta tiene bloqueada la exigencia de que toda reunion
+        # tenga UNA opcion de seguridad (codigo, sala de espera o "solo usuarios
+        # autenticados"). Si no ponemos codigo, Zoom elige por nosotros -- y las
+        # otras dos dejan al bot afuera. Viaja dentro del link, asi que el
+        # candidato no tiene que escribirlo.
+        "password": f"{secrets.randbelow(10**8):08d}",
         "settings": {
-            # Las dos que hacen que el bot entre sin que nadie lo admita.
+            # Las que hacen que el bot entre sin que nadie lo admita.
             "waiting_room": False,
             "join_before_host": True,
             "jbh_time": 0,          # puede entrar desde el minuto cero
             "approval_type": 2,     # sin registro previo
+            # Un bot es un invitado anonimo: con esto en True, Zoom lo manda a la
+            # sala de espera aunque la sala de espera este apagada. Fue lo que
+            # rompio la cuarta prueba, y desde afuera parecia un problema de
+            # sala de espera.
+            "meeting_authentication": False,
             "mute_upon_entry": False,
             "host_video": False,
             "participant_video": False,
@@ -125,11 +138,19 @@ def crear_reunion(
     # Si Zoom ignorara alguna de las dos, el bot se quedaria golpeando la puerta
     # y la sesion se perderia sin que nadie entienda por que. Mejor saberlo aca.
     s = m.get("settings", {})
-    if s.get("waiting_room") or not s.get("join_before_host"):
+    problemas = []
+    if s.get("waiting_room"):
+        problemas.append("sala de espera encendida")
+    if not s.get("join_before_host"):
+        problemas.append("no se puede entrar antes que el anfitrion")
+    if s.get("meeting_authentication"):
+        problemas.append("exige usuarios autenticados (el bot es anonimo)")
+    if not m.get("password"):
+        problemas.append("sin codigo de acceso")
+    if problemas:
         raise ErrorZoom(
-            f"La reunion {m.get('id')} quedo con sala_de_espera="
-            f"{s.get('waiting_room')} y entrar_antes={s.get('join_before_host')}. "
-            "La politica de la cuenta esta pisando la configuracion: el bot no "
+            f"La reunion {m.get('id')} quedo con: {', '.join(problemas)}. "
+            "La politica de la cuenta esta pisando la configuracion y el bot no "
             "va a poder entrar solo."
         )
     return m
