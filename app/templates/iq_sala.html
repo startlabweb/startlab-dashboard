@@ -94,6 +94,7 @@ const el = {
 
 let CASOS = [];
 let pc = null, canal = null;
+let arranco = false;   // el saludo se manda una sola vez
 
 /* La transcripcion se arma aca, con quien dijo cada cosa. Es la fuente de la
    nota: la rubrica tiene la regla de no darle credito al candidato por lo que
@@ -177,9 +178,26 @@ function mostrarCaso(numero){
   return true;
 }
 
+/* Cerrar la conexion apenas el modelo pide terminar le corta la despedida a la
+   mitad: la voz todavia esta sonando cuando se cae el canal. Paso en la segunda
+   prueba real y se sintio abrupto. Ahora se marca la intencion de cerrar y se
+   espera a que termine de hablar. */
+let cerrando = false, relojCierre = null;
+
 function terminar(motivo){
-  log("fin: " + motivo);
-  enviarTranscripcion(true);   // cierra la sesion y la manda a la cola de correccion
+  if (cerrando) return;
+  cerrando = true;
+  log("fin: " + motivo + " (esperando a que termine de hablar)");
+  enviarTranscripcion(true);   // a la cola de correccion, no depende del audio
+  estado("Cerrando...", "vivo");
+
+  // Red de seguridad: si el modelo nunca avisa que termino de hablar, se cierra
+  // igual. Mejor un silencio de mas que un bot colgado en la reunion.
+  relojCierre = setTimeout(cerrarDeVerdad, 20000);
+}
+
+function cerrarDeVerdad(){
+  if (relojCierre) { clearTimeout(relojCierre); relojCierre = null; }
   estado("Sesión finalizada", "");
   el.caso.classList.remove("visible");
   el.espera.style.display = "block";
@@ -220,6 +238,21 @@ function manejarEvento(ev){
   else if (ev.type === "response.output_audio_transcript.done") {
     anotar("ENTREVISTADOR", ev.transcript);
   }
+  else if (ev.type === "session.created" || ev.type === "session.updated") {
+    /* Recien aca la sesion existe del otro lado. Mandar el saludo en
+       `canal.onopen` era demasiado temprano y se perdia: en las dos primeras
+       pruebas hubo que decirle "hola" para que arrancara. */
+    if (!arranco) {
+      arranco = true;
+      log("sesion lista, pidiendo el saludo");
+      canal.send(JSON.stringify({type:"response.create"}));
+    }
+  }
+  else if (ev.type === "response.done") {
+    // Si ya se pidio terminar, este es el final de la despedida: se le da un
+    // respiro para que salga el ultimo pedazo de audio y recien ahi se corta.
+    if (cerrando) setTimeout(cerrarDeVerdad, 2500);
+  }
   else if (ev.type === "error") {
     log("ERROR " + JSON.stringify(ev.error).slice(0, 140));
   }
@@ -248,11 +281,17 @@ async function conectar(){
     canal.onopen = function(){
       estado("En sesión", "vivo");
       log("canal abierto");
-      /* La IA saluda primero. Sin esto se queda muda esperando a que hable el
-         candidato, y el candidato espera a que hable la IA: nadie arranca.
-         Pasó en la primera prueba -- hubo que decirle "hola" para que empezara. */
-      canal.send(JSON.stringify({type:"response.create"}));
       el.pista.textContent = "Si no escuchás nada, decí «hola» para empezar.";
+      /* Ultimo recurso: si a los 4 segundos la sesion nunca aviso que estaba
+         lista, se pide el saludo igual. Es mejor un saludo repetido que un
+         silencio en el que nadie arranca. */
+      setTimeout(function(){
+        if (!arranco && canal && canal.readyState === "open") {
+          arranco = true;
+          log("sesion sin avisar, pido el saludo igual");
+          canal.send(JSON.stringify({type:"response.create"}));
+        }
+      }, 4000);
     };
 
     const oferta = await pc.createOffer();
