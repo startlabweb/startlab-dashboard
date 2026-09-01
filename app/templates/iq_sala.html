@@ -115,19 +115,60 @@ function anotar(quien, texto){
 /* El bot entra a la reunion en 6 segundos y el candidato tarda medio minuto en
    abrir el Zoom. En la segunda prueba real la IA saludo a una sala vacia y el
    candidato, al llegar, se encontro con silencio y tuvo que decir "hola".
-   Por eso el saludo espera un rato y se repite mientras nadie conteste. */
-const ESPERA_SALUDO = 12000, REINTENTO_SALUDO = 22000, MAX_SALUDOS = 4;
+
+   La solucion no es esperar un rato fijo sino ESCUCHAR la sala: Recall le mete
+   el audio mezclado de la reunion al microfono de esta pagina, asi que una sala
+   vacia es silencio y la llegada de alguien se oye (el tono de Zoom, su ruido
+   de fondo, su respiracion). Se calibra el piso de silencio durante los
+   primeros segundos y se saluda cuando el nivel lo supera de forma sostenida.
+
+   El temporizador queda igual, de respaldo, por si el candidato entra con el
+   microfono apagado en una habitacion muda. */
+const REINTENTO_SALUDO = 25000, MAX_SALUDOS = 4, RESPALDO_SALUDO = 45000;
 let hablo = false, saludos = 0;
 
+function saludar(motivo){
+  if (hablo || cerrando || saludos >= MAX_SALUDOS) return;
+  if (!canal || canal.readyState !== "open") return;
+  saludos++;
+  log("saludo " + saludos + " (" + motivo + ")");
+  canal.send(JSON.stringify({type:"response.create"}));
+  setTimeout(function(){ saludar("nadie contesto"); }, REINTENTO_SALUDO);
+}
+
 function programarSaludo(){
-  setTimeout(function reintentar(){
-    if (hablo || cerrando || saludos >= MAX_SALUDOS) return;
-    if (!canal || canal.readyState !== "open") return;
-    saludos++;
-    log("saludo " + saludos + " (nadie contesto todavia)");
-    canal.send(JSON.stringify({type:"response.create"}));
-    setTimeout(reintentar, REINTENTO_SALUDO);
-  }, ESPERA_SALUDO);
+  // Respaldo tardio: si nunca se detecta a nadie, se saluda igual.
+  setTimeout(function(){ saludar("respaldo por tiempo"); }, RESPALDO_SALUDO);
+}
+
+function escucharLaSala(stream){
+  let ctx;
+  try { ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+  catch (e) { log("sin AudioContext, queda solo el respaldo por tiempo"); return; }
+
+  const analizador = ctx.createAnalyser();
+  analizador.fftSize = 512;
+  ctx.createMediaStreamSource(stream).connect(analizador);
+  const buf = new Float32Array(analizador.fftSize);
+
+  let piso = 0, muestras = 0, seguidas = 0;
+  const reloj = setInterval(function(){
+    if (hablo || cerrando || saludos > 0) { clearInterval(reloj); return; }
+    analizador.getFloatTimeDomainData(buf);
+    let suma = 0;
+    for (let i = 0; i < buf.length; i++) suma += buf[i] * buf[i];
+    const nivel = Math.sqrt(suma / buf.length);
+
+    muestras++;
+    if (muestras <= 15) { piso = Math.max(piso, nivel); return; }  // 3 s de sala vacia
+
+    if (nivel > Math.max(piso * 4, 0.006)) seguidas++; else seguidas = 0;
+    if (seguidas >= 3) {                                   // ~0,6 s de sonido real
+      clearInterval(reloj);
+      log("se oye a alguien en la sala");
+      saludar("llego el candidato");
+    }
+  }, 200);
 }
 
 async function enviarTranscripcion(final){
@@ -287,6 +328,7 @@ async function conectar(){
     pc = new RTCPeerConnection();
     pc.ontrack = function(e){ el.voz.srcObject = e.streams[0]; };
     pc.addTrack(mic.getTracks()[0], mic);
+    escucharLaSala(mic);   // para saludar recien cuando haya alguien
 
     canal = pc.createDataChannel("oai-events");
     canal.onmessage = function(e){ try { manejarEvento(JSON.parse(e.data)); } catch(err){} };
