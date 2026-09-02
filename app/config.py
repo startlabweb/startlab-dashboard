@@ -82,5 +82,26 @@ class Settings:
     IQ_MODELO_VOZ: str = os.getenv("IQ_MODELO_VOZ", "gpt-realtime-2.1")
     IQ_VOZ: str = os.getenv("IQ_VOZ", "marin")
 
+    # --- El correo con el formulario ---
+
+    # APAGADO por defecto y a proposito. Es lo unico del sistema que le escribe a
+    # una persona de afuera, y un correo mandado no se puede deshacer. En
+    # simulacion se registra exactamente lo que se habria mandado, sin mandarlo.
+    IQ_CORREO_ACTIVO: bool = os.getenv("IQ_CORREO_ACTIVO", "false").lower() == "true"
+
+    # Desde que buzon de Startlab sale el correo. La cuenta de servicio se hace
+    # pasar por el, asi que un admin de Workspace tiene que autorizarle el scope
+    # `gmail.send` una vez.
+    IQ_CORREO_REMITENTE: str = os.getenv("IQ_CORREO_REMITENTE", "")
+
+    # La planilla donde Paula deja nombre y mail de a quien invitar, y la hoja.
+    # Se comparte con la cuenta de servicio como EDITOR: el sistema escribe la
+    # fecha de envio ahi, y esa fecha es lo que evita mandar el correo dos veces.
+    IQ_HOJA_ASIGNADOS: str = os.getenv("IQ_HOJA_ASIGNADOS", "")
+    IQ_HOJA_ASIGNADOS_TAB: str = os.getenv("IQ_HOJA_ASIGNADOS_TAB", "")  # vacio = la primera
+
+    # El link del formulario que va en el correo.
+    IQ_LINK_FORM: str = os.getenv("IQ_LINK_FORM", "")
+
 
 settings = Settings()

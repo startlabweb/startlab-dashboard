@@ -319,3 +319,17 @@ async def hay_alguien(t: str | None = Query(None), s: str = Query(...)):
     """La sala pregunta si ya puede saludar."""
     _verificar_token(t)
     return {"hay_alguien": s in _llegaron}
+
+
+@router.post("/invitar")
+async def invitar(t: str | None = Query(None), limite: int = Query(25, ge=1, le=200)):
+    """Manda el formulario a quien Paula haya dejado sin invitar en la planilla.
+
+    Arranca en simulacion: con `IQ_CORREO_ACTIVO` apagado devuelve cuantos
+    correos HABRIA mandado, sin mandar ninguno. Es la forma de ver que la
+    planilla se lee bien antes de escribirle a un candidato real.
+    """
+    _verificar_token(t)
+    from app.services import invitaciones
+
+    return invitaciones.invitar_pendientes(limite=limite)
