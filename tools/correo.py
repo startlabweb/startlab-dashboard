@@ -55,21 +55,26 @@ def _servicio():
     return build("gmail", "v1", credentials=creds), remitente
 
 
-def cargar_plantilla(nombre: str, **valores) -> tuple[str, str]:
+def cargar_plantilla(plantilla: str, **valores) -> tuple[str, str]:
     """Lee una plantilla y devuelve (asunto, cuerpo).
+
+    El parametro se llama `plantilla` y no `nombre` porque las plantillas
+    reciben justamente un `nombre` (el del candidato) entre sus valores: con el
+    nombre viejo, `cargar_plantilla("correo_form.md", nombre="Jossy")` explotaba
+    con "multiple values for argument". Reventaba en el primer envio real.
 
     La primera linea es `ASUNTO: ...`. El resto es el cuerpo. Se deja como
     archivo y no en el codigo para que el texto lo pueda corregir Paula sin
     tocar Python -- es su correo, no nuestro.
     """
-    ruta = PLANTILLAS / nombre
+    ruta = PLANTILLAS / plantilla
     if not ruta.exists():
-        raise ErrorCorreo(f"No existe la plantilla {nombre}")
+        raise ErrorCorreo(f"No existe la plantilla {plantilla}")
     texto = ruta.read_text(encoding="utf-8")
 
     lineas = texto.splitlines()
     if not lineas or not lineas[0].startswith("ASUNTO:"):
-        raise ErrorCorreo(f"{nombre} tiene que empezar con 'ASUNTO: ...'")
+        raise ErrorCorreo(f"{plantilla} tiene que empezar con 'ASUNTO: ...'")
     asunto = lineas[0][len("ASUNTO:"):].strip()
     cuerpo = "\n".join(lineas[1:]).strip()
 
@@ -83,7 +88,7 @@ def cargar_plantilla(nombre: str, **valores) -> tuple[str, str]:
         sobrantes = [t for t in ("{nombre}", "{link}", "{link_form}") if t in cuerpo]
         if sobrantes:
             raise ErrorCorreo(
-                f"La plantilla {nombre} quedo con {sobrantes} sin reemplazar"
+                f"La plantilla {plantilla} quedo con {sobrantes} sin reemplazar"
             )
     return asunto, cuerpo
 
