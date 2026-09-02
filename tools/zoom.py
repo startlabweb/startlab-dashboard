@@ -127,6 +127,11 @@ def crear_reunion(
             # rompio la cuarta prueba, y desde afuera parecia un problema de
             # sala de espera.
             "meeting_authentication": False,
+            # Grabacion en la nube de Zoom. La grabacion de Recall NO incluye la
+            # voz del propio bot, asi que la unica forma de tener la sesion
+            # completa -- las preguntas de la IA y las respuestas del candidato
+            # en el mismo archivo -- es que la grabe Zoom.
+            "auto_recording": "cloud",
             "mute_upon_entry": False,
             "host_video": False,
             "participant_video": False,

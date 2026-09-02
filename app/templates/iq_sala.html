@@ -23,9 +23,10 @@
   .punto.error{background:var(--bad)}
   @keyframes latir{50%{opacity:.3}}
   #espera{margin:auto;text-align:center}
-  #espera h1{font-size:52px;font-weight:800;letter-spacing:-1px}
+  #espera h1{font-size:150px;font-weight:800;letter-spacing:4px;line-height:1;color:var(--gold)}
+  #espera h1.chico{font-size:52px;letter-spacing:-1px;color:var(--text)}
   #espera h1 span{color:var(--gold)}
-  #espera p{margin-top:14px;font-size:20px;color:var(--muted)}
+  #espera p{margin-top:22px;font-size:26px;color:var(--text)}
   #comenzar{margin-top:36px;background:var(--gold);color:#1a1a1a;border:0;border-radius:10px;padding:16px 40px;font-family:inherit;font-size:19px;font-weight:600;cursor:pointer}
   #comenzar:hover{background:var(--gold-dim)}
   #comenzar:disabled{opacity:.5;cursor:default}
@@ -48,8 +49,8 @@
   </header>
 
   <div id="espera">
-    <h1>Business <span>IQ Test</span></h1>
-    <p id="pista">Dos casos reales. Unos 15 minutos.</p>
+    <h1 id="saludo-grande">HOLA</h1>
+    <p id="pista">Decí «hola» en voz alta para empezar.</p>
     <button id="comenzar">Comenzar la sesión</button>
   </div>
 
@@ -107,7 +108,12 @@ let enviando = false, pendiente = false;
 function anotar(quien, texto){
   const t = String(texto || "").trim();
   if (!t) return;
-  if (quien === "CANDIDATO") hablo = true;   // ya hay alguien del otro lado
+  if (quien === "CANDIDATO" && !hablo) {
+    hablo = true;                              // ya hay alguien del otro lado
+    const h = document.getElementById("saludo-grande");
+    if (h) { h.textContent = "Business IQ Test"; h.classList.add("chico"); }
+    el.pista.textContent = "Escuchá el caso y contá cómo lo analizarías.";
+  }
   TURNOS.push(quien + ": " + t);
   enviarTranscripcion(false);
 }
@@ -124,16 +130,23 @@ function anotar(quien, texto){
    La senal buena la da Recall, que avisa por webhook cuando entra un
    participante. El temporizador queda solo de respaldo, para el caso de que ese
    aviso no llegue nunca. */
-const REINTENTO_SALUDO = 25000, MAX_SALUDOS = 4, RESPALDO_SALUDO = 90000;
+const RESPALDO_SALUDO = 90000;
 let hablo = false, saludos = 0;
 
+/* Se saluda UNA sola vez y no se reintenta.
+   Antes se repetia cada 25 s mientras el candidato no hablara, y eso rompio la
+   prueba final: cada `response.create` arranca una respuesta NUEVA, asi que un
+   candidato que escuchaba en silencio interrumpia al modelo hasta cuatro veces
+   en los primeros 100 segundos -- justo mientras presentaba el caso. El caso
+   nunca se leia entero.
+   El reintento ademas ya no hace falta: Recall avisa cuando el candidato entra,
+   asi que el saludo sale en el momento justo y no hay a quien insistirle. */
 function saludar(motivo){
-  if (hablo || cerrando || saludos >= MAX_SALUDOS) return;
+  if (hablo || cerrando || saludos > 0) return;
   if (!canal || canal.readyState !== "open") return;
   saludos++;
-  log("saludo " + saludos + " (" + motivo + ")");
+  log("saludo (" + motivo + ")");
   canal.send(JSON.stringify({type:"response.create"}));
-  setTimeout(function(){ saludar("nadie contesto"); }, REINTENTO_SALUDO);
 }
 
 function programarSaludo(){
@@ -254,7 +267,7 @@ function cerrarDeVerdad(){
   estado("Sesión finalizada", "");
   el.caso.classList.remove("visible");
   el.espera.style.display = "block";
-  el.espera.innerHTML = "<h1>Gracias</h1><p>La sesión terminó. Ya podés cerrar la ventana.</p>";
+  el.espera.innerHTML = "<h1 class=\"chico\">Gracias</h1><p>La sesión terminó. Ya podés cerrar la ventana.</p>";
   try { if (canal) canal.close(); if (pc) pc.close(); } catch(e){}
 }
 

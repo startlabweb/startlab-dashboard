@@ -111,9 +111,17 @@ async def entrar(token: str):
             webhook_llegada=f"{_base_publica()}/api/iq/llego?s={quote(token)}",
         )
     except Exception as e:
-        # Sin bot no hay sesion: se borra la reunion para no dejar salas
-        # huerfanas y se deja el link utilizable para reintentar.
-        zoom.borrar_reunion(reunion["id"])
+        # Sin bot no hay sesion: se intenta borrar la reunion para no dejar salas
+        # huerfanas, y se deja el link utilizable para reintentar.
+        #
+        # El borrado va en su propio try: si falla (por ejemplo porque a la app de
+        # Zoom le falta el scope de borrado) taparia el error de verdad, y el
+        # equipo terminaria buscando un problema de permisos de Zoom cuando lo que
+        # se cayo fue Recall.
+        try:
+            zoom.borrar_reunion(reunion["id"])
+        except Exception as e2:
+            log.warning(f"No se pudo borrar la reunion {reunion['id']}: {e2}")
         log.error(f"{nombre}: no se pudo crear el bot, reunion descartada: {e}")
         raise HTTPException(
             status_code=502,

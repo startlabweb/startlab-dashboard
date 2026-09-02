@@ -235,6 +235,10 @@ async def guardar_transcripcion(req: TranscripcionRequest):
     # probar la sala de punta a punta sin marcar a nadie real y sin depender de
     # que la migracion 005 este corrida.
     if req.sesion.startswith("prueba-"):
+        # Tambien en memoria: la tabla de actividad ya tiene tanto historial que
+        # las consultas para leerla expiran, y una prueba que no se puede leer no
+        # sirve para diagnosticar nada.
+        _pruebas[req.sesion] = req.texto
         db.log_activity(
             req.monitor_id or "",
             "iq_prueba",
@@ -291,6 +295,9 @@ async def guardar_transcripcion(req: TranscripcionRequest):
 # medio, la sala cae en su respaldo por tiempo y saluda igual.
 _llegaron: set[str] = set()
 
+# Transcripciones de las sesiones de prueba, para poder leerlas al instante.
+_pruebas: dict[str, str] = {}
+
 
 @router.post("/llego")
 async def llego_alguien(s: str = Query(...), payload: dict | None = None):
@@ -333,3 +340,13 @@ async def invitar(t: str | None = Query(None), limite: int = Query(25, ge=1, le=
     from app.services import invitaciones
 
     return invitaciones.invitar_pendientes(limite=limite)
+
+
+@router.get("/prueba/{sesion}")
+async def leer_prueba(sesion: str, t: str | None = Query(None)):
+    """La transcripcion de una sesion de prueba, para revisarla enseguida."""
+    _verificar_token(t)
+    texto = _pruebas.get(sesion)
+    if texto is None:
+        return {"encontrada": False, "sesiones": sorted(_pruebas.keys())}
+    return {"encontrada": True, "sesion": sesion, "chars": len(texto), "texto": texto}
