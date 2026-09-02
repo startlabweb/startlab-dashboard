@@ -50,7 +50,7 @@
 
   <div id="espera">
     <h1 id="saludo-grande">HOLA</h1>
-    <p id="pista">Decí «hola» en voz alta para empezar.</p>
+    <p id="pista">Di <b>HOLA</b> y empezará tu evaluación.</p>
     <button id="comenzar">Comenzar la sesión</button>
   </div>
 
@@ -112,7 +112,7 @@ function anotar(quien, texto){
     hablo = true;                              // ya hay alguien del otro lado
     const h = document.getElementById("saludo-grande");
     if (h) { h.textContent = "Business IQ Test"; h.classList.add("chico"); }
-    el.pista.textContent = "Escuchá el caso y contá cómo lo analizarías.";
+    el.pista.textContent = "Escucha el caso y cuenta cómo lo analizarías.";
   }
   TURNOS.push(quien + ": " + t);
   enviarTranscripcion(false);
@@ -267,7 +267,7 @@ function cerrarDeVerdad(){
   estado("Sesión finalizada", "");
   el.caso.classList.remove("visible");
   el.espera.style.display = "block";
-  el.espera.innerHTML = "<h1 class=\"chico\">Gracias</h1><p>La sesión terminó. Ya podés cerrar la ventana.</p>";
+  el.espera.innerHTML = "<h1 class=\"chico\">Gracias</h1><p>La sesión terminó. Ya puedes cerrar la ventana.</p>";
   try { if (canal) canal.close(); if (pc) pc.close(); } catch(e){}
 }
 
@@ -341,7 +341,7 @@ async function conectar(){
     canal.onopen = function(){
       estado("En sesión", "vivo");
       log("canal abierto");
-      el.pista.textContent = "Si no escuchás nada, decí «hola» para empezar.";
+      el.pista.textContent = "Di HOLA y empezará tu evaluación.";
       /* Respaldo: si la sesion nunca avisa que esta lista, se programa igual. */
       setTimeout(function(){
         if (!arranco) { arranco = true; log("sesion sin avisar, saludo igual"); programarSaludo(); }
