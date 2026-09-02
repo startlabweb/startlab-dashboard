@@ -158,6 +158,16 @@ que se le comparten.
 repos de `startlabweb`: da 403. Pushear con el token de `startlabweb`
 (`gh auth token --user startlabweb`), sin tocar la configuración global.
 
+## Pedidos anotados, sin empezar
+
+- **Reporte de estado a Slack.** Un aviso periodico a un canal con como van las
+  personas del proceso: cuantas invitadas, cuantas llenaron el formulario,
+  cuantas esperan la aprobacion de Paula, cuantas en IQ. Pedido el 2-sep-2026.
+  Los datos ya estan todos: la fecha de envio en la planilla de asignados y la
+  columna `Estado` de la planilla de respuestas alcanzan para armarlo sin tocar
+  nada mas. No confundir con el aviso del Gate 1, que ya existe y es por
+  candidato, no un resumen.
+
 ## Current State / WIP
 
 **Funcionando en producción:** los 4 monitores. El del Consultor lleva ~93 candidatos,

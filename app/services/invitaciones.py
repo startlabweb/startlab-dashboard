@@ -5,10 +5,11 @@ El flujo, entero:
     Paula escribe nombre y mail en la planilla de asignados
         -> el sistema ve la fila sin fecha de envio
         -> le manda el correo con el link del formulario
-        -> escribe la fecha en la columna `Enviado`
+        -> escribe la fecha en la columna `Fecha de envio`
 
-La fecha en la planilla ES el registro de que se mando, y es lo que evita que a
-la misma persona le llegue el correo dos veces. Por eso la planilla se comparte
+Paula NO llena esa columna: la escribe el sistema. Es el registro de que el
+correo salio, y es lo unico que evita que a la misma persona le llegue dos veces.
+Va en hora de Chile porque la va a leer el equipo, no una maquina. Por eso la planilla se comparte
 con la cuenta de servicio como EDITOR y no como lector: sin poder escribir esa
 celda, cada ciclo volveria a mandar el mismo correo.
 
@@ -18,6 +19,13 @@ recibe nada y nadie se enteraria.
 """
 
 from datetime import datetime, timezone
+
+try:
+    from zoneinfo import ZoneInfo
+
+    _TZ = ZoneInfo("America/Santiago")
+except Exception:  # sin tzdata en la imagen: mejor UTC que reventar
+    _TZ = timezone.utc
 
 from app.config import settings
 from tools import correo
@@ -31,7 +39,7 @@ log = get_logger("invitaciones")
 # como se llega a escribir en la columna equivocada sin que nadie lo note.
 COL_NOMBRE = "Nombre"
 COL_EMAIL = "Email"
-COL_ENVIADO = "Enviado"
+COL_ENVIADO = "Fecha de envío"
 
 
 def _abrir_hoja(hoja_id: str, tab: str | None):
@@ -131,7 +139,7 @@ def invitar_pendientes(limite: int = 25) -> dict:
 
         if r["enviado"]:
             resumen["enviados"] += 1
-            marcas.append((n, datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")))
+            marcas.append((n, datetime.now(_TZ).strftime("%Y-%m-%d %H:%M")))
         elif "simulacion" in r["motivo"]:
             resumen["simulados"] += 1
         else:
