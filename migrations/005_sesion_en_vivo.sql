@@ -65,3 +65,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_iq_token
 CREATE INDEX IF NOT EXISTS idx_candidates_iq_bot
   ON candidates (iq_bot_id)
   WHERE iq_bot_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- Turnos: el candidato elige horario, y NUNCA hay dos sesiones a la vez
+-- ---------------------------------------------------------------------------
+-- Por que hay turnos, si el diseño original era "entra cuando quiera": una
+-- licencia de Zoom no puede tener dos reuniones activas al mismo tiempo. Con dos
+-- candidatos simultaneos, el segundo no entra -- y peor, la documentacion de
+-- Zoom dice que iniciar una segunda reunion con "entrar antes que el anfitrion"
+-- puede TERMINAR la primera sin aviso. O sea que un candidato podia cortarle el
+-- examen a otro. Los turnos son lo que lo hace imposible.
+ALTER TABLE candidates
+  ADD COLUMN IF NOT EXISTS iq_slot_at TIMESTAMPTZ;
+
+-- La garantia real esta ACA y no en el codigo. Dos candidatos que aprietan el
+-- mismo horario en el mismo segundo pasan las dos validaciones de la aplicacion;
+-- lo unico que los detiene es que la base rechace el segundo INSERT.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_iq_slot
+  ON candidates (monitor_id, iq_slot_at)
+  WHERE iq_slot_at IS NOT NULL;
+
+-- El poller busca los turnos que estan por empezar y todavia no tienen bot.
+CREATE INDEX IF NOT EXISTS idx_candidates_iq_slot_pendiente
+  ON candidates (monitor_id, iq_slot_at)
+  WHERE iq_slot_at IS NOT NULL AND iq_bot_id IS NULL;

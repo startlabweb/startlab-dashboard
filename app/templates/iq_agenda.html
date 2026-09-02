@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agenda tu Business IQ Test — Start Lab</title>
+<link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--midnight:#121212;--card:#1E1E1E;--border:#333;--gold:#EAB660;--gold-dim:#C09D46;--text:#F2F2F2;--muted:#8A8A8A;--ok:#4ADE80;--bad:#F87171;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--midnight);color:var(--text);font-family:"Red Hat Display",system-ui,sans-serif;min-height:100vh;padding:40px 20px}
+  .caja{max-width:760px;margin:0 auto}
+  .marca{font-size:15px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)}
+  .marca span{color:var(--gold)}
+  h1{font-size:38px;font-weight:800;margin:18px 0 12px;letter-spacing:-.5px}
+  .intro{font-size:18px;color:var(--muted);line-height:1.55;margin-bottom:14px}
+  .datos{background:var(--card);border-left:3px solid var(--gold);border-radius:0 8px 8px 0;padding:16px 20px;margin:24px 0 34px;font-size:16px;line-height:1.7}
+  .datos b{color:var(--gold)}
+  .dia{margin-bottom:26px}
+  .dia h2{font-size:16px;font-weight:600;color:var(--gold);text-transform:capitalize;margin-bottom:12px}
+  .turnos{display:flex;flex-wrap:wrap;gap:9px}
+  .turno{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:11px 17px;font-family:inherit;font-size:16px;font-weight:600;cursor:pointer;transition:all .15s}
+  .turno:hover{border-color:var(--gold);color:var(--gold)}
+  .turno:disabled{opacity:.4;cursor:default}
+  .turno.elegido{background:var(--gold);color:#1a1a1a;border-color:var(--gold)}
+  #aviso{margin-top:26px;padding:16px 20px;border-radius:8px;font-size:16px;line-height:1.55;display:none}
+  #aviso.visible{display:block}
+  #aviso.ok{background:rgba(74,222,128,.12);border:1px solid var(--ok);color:var(--ok)}
+  #aviso.mal{background:rgba(248,113,113,.12);border:1px solid var(--bad);color:var(--bad)}
+  .vacio{background:var(--card);border-radius:10px;padding:30px;text-align:center;color:var(--muted);font-size:17px}
+  footer{margin-top:44px;font-size:13px;color:#5f5f5f}
+</style>
+</head>
+<body>
+<div class="caja">
+  <div class="marca">Start <span>Lab</span></div>
+  <h1>Agenda tu Business IQ Test{% if nombre %}, {{ nombre }}{% endif %}</h1>
+  <p class="intro">Elige el horario que mejor te quede. Los horarios están en <b>hora de Chile</b>.</p>
+
+  <div class="datos">
+    Son <b>máximo 15 minutos</b> por Zoom con una IA, que te presentará dos casos de
+    negocios online para que identifiques sus principales cuellos de botella.<br>
+    No hace falta que prepares nada. <b>Esto no es una entrevista</b> y la IA no
+    evalúa tu desempeño: solo facilita el examen y recopila tus respuestas.
+  </div>
+
+  {% if dias %}
+    {% for d in dias %}
+    <div class="dia">
+      <h2>{{ d.etiqueta }}</h2>
+      <div class="turnos">
+        {% for t in d.turnos %}
+        <button class="turno" data-iso="{{ t.iso }}">{{ t.hora }}</button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="vacio">
+      No quedan horarios disponibles por ahora. Escríbenos al correo desde el que
+      te invitamos y te damos uno.
+    </div>
+  {% endif %}
+
+  <div id="aviso"></div>
+  <footer>Start Lab · sesión asistida por IA, queda grabada para su evaluación</footer>
+</div>
+
+<script>
+const TOKEN = "{{ token }}";
+const aviso = document.getElementById("aviso");
+
+function mostrar(texto, clase){
+  aviso.textContent = texto;
+  aviso.className = "visible " + clase;
+  aviso.scrollIntoView({behavior:"smooth", block:"center"});
+}
+
+document.querySelectorAll(".turno").forEach(function(b){
+  b.addEventListener("click", async function(){
+    /* Se bloquean TODOS los botones, no solo el apretado: si el candidato hace
+       doble clic o prueba dos horarios seguidos, el segundo pedido choca contra
+       el indice unico y recibe un error que no entiende. */
+    const botones = document.querySelectorAll(".turno");
+    botones.forEach(function(x){ x.disabled = true; });
+    b.classList.add("elegido");
+
+    try {
+      const r = await fetch("/iq/agendar/" + encodeURIComponent(TOKEN), {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({iso: b.dataset.iso})
+      });
+      const d = await r.json();
+      if (r.ok) {
+        mostrar("¡Listo! Tu sesión quedó agendada para el " + d.etiqueta +
+                " a las " + d.hora_local + " (hora de Chile). Vuelve a este mismo " +
+                "link cinco minutos antes y entrarás directo.", "ok");
+        document.querySelectorAll(".dia").forEach(function(x){ x.style.display = "none"; });
+      } else {
+        mostrar(d.detail || "No pudimos reservar ese horario.", "mal");
+        botones.forEach(function(x){ x.disabled = false; });
+        b.classList.remove("elegido");
+      }
+    } catch (e) {
+      mostrar("Hubo un problema de conexión. Intenta de nuevo.", "mal");
+      botones.forEach(function(x){ x.disabled = false; });
+      b.classList.remove("elegido");
+    }
+  });
+});
+</script>
+</body>
+</html>
