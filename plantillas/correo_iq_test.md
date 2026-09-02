@@ -1,4 +1,4 @@
-ASUNTO: Business IQ Test de Start Lab
+ASUNTO: Avanzas a la siguiente etapa — Business IQ Test de Start Lab
 
 Hola {nombre},
 
@@ -8,8 +8,8 @@ Se trata de una **sesión de máximo 15 minutos por Zoom con una IA**, que te pr
 
 ### ¿Cómo funciona?
 
-1. Ingresa a tu sesión aquí: 👉 {link}
-2. Se abrirá el Zoom automáticamente.
+1. Agenda tu sesión aquí: 👉 {link}
+2. Únete al Zoom en el horario seleccionado, desde ese mismo enlace.
 3. La IA te presentará los casos y recopilará tus respuestas.
 
 ⚠️ **Esto no es una entrevista y la IA no evalúa tu desempeño.** Funciona únicamente como facilitadora del examen oral y recopila tus respuestas.

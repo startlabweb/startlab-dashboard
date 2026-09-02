@@ -17,9 +17,12 @@ s), no en el de procesamiento.
 
 from datetime import datetime, timezone
 
+import secrets
+
 from app import database as db
 from app.config import settings
 from tools import slack
+from tools import correo
 from tools.logger import get_logger
 from tools.meet_recordings import listar_sesiones, matchear, normalizar
 from tools.motivos import resumen_error
@@ -138,6 +141,72 @@ def estado_texto(monitor: dict, c: dict) -> str:
     return "En evaluacion"
 
 
+
+def _invitar_al_iq(monitor: dict, c: dict) -> None:
+    """Le manda al candidato aprobado el link para agendar su sesion de IQ.
+
+    Es el ultimo eslabon del embudo: Paula escribe "Si" en la planilla, y de ahi
+    sale solo el correo con el link. Nadie mas toca nada.
+
+    Tres decisiones que importan:
+
+    - **El token se genera una sola vez.** Si ya tiene uno, se reusa: el link que
+      el candidato guardo en su bandeja tiene que seguir funcionando para
+      siempre. Regenerarlo le rompe el correo que ya recibio.
+    - **`iq_invited_at` se escribe DESPUES de que Gmail confirma.** Es lo que
+      evita mandarle el correo dos veces. Al reves -- marcar primero -- un fallo
+      dejaria a un candidato aprobado sin recibir nada, y nadie se enteraria.
+    - **No levanta excepcion nunca.** Esto corre dentro del ciclo de gates: un
+      correo que falla no puede dejar sin procesar a los demas candidatos. Se
+      loguea y el proximo ciclo reintenta, porque sin `iq_invited_at` la
+      condicion sigue dando verdadera.
+    """
+    if c.get("iq_invited_at"):
+        return
+    email = (c.get("email") or "").strip()
+    nombre = (c.get("name") or "").strip()
+    if not email:
+        log.warning(f"{nombre or 'sin nombre'} aprobado pero sin mail: no se puede invitar")
+        return
+
+    base = (settings.DASHBOARD_URL or "").strip().rstrip("/")
+    if not base:
+        log.error("Falta DASHBOARD_URL: no se puede armar el link de la sesion")
+        return
+
+    token = c.get("iq_session_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        try:
+            db.update_candidate(c["id"], {"iq_session_token": token})
+            c["iq_session_token"] = token
+        except Exception as e:
+            log.error(f"No se pudo guardar el token de {nombre}: {str(e)[:200]}")
+            return
+
+    try:
+        asunto, cuerpo = correo.cargar_plantilla(
+            "correo_iq_test.md",
+            nombre=nombre.split(" ")[0] or nombre,
+            link=f"{base}/iq/entrar/{token}",
+        )
+    except Exception as e:
+        log.error(f"La plantilla del IQ no se pudo armar: {e}")
+        return
+
+    r = correo.enviar(email, asunto, cuerpo)
+    if not r["enviado"]:
+        log.info(f"{nombre}: invitacion al IQ no enviada ({r['motivo']})")
+        return
+
+    db.update_candidate(c["id"], {"iq_invited_at": _ahora_iso()})
+    c["iq_invited_at"] = _ahora_iso()
+    db.log_activity(
+        monitor["id"], "iq_invitacion",
+        f"{nombre}: se le mando el link para agendar su sesion de IQ",
+    )
+    log.info(f"{nombre}: invitado al IQ Test")
+
 # --- Gate 1: calculo, decision de Paula y aviso ----------------------------
 
 _SI = {"si", "s", "yes", "y", "x", "ok", "true", "verdadero", "aprobado", "aprobada", "1"}
@@ -222,6 +291,9 @@ def _sincronizar_aprobaciones(
             "gate1_decision",
             f"{c.get('name') or 'sin nombre'} (fila {sheet_row}): Paula marco {nueva}",
         )
+
+        if nueva == "aprobado":
+            _invitar_al_iq(monitor, c)
 
     if cambios:
         log.info(f"Monitor {monitor['id']}: {cambios} decisiones de Paula sincronizadas")
