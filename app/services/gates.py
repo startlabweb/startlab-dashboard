@@ -163,6 +163,15 @@ def _invitar_al_iq(monitor: dict, c: dict) -> None:
     """
     if c.get("iq_invited_at"):
         return
+    if not settings.IQ_INVITACION_ACTIVA:
+        # A proposito NO se marca `iq_invited_at`: cuando se prenda el
+        # interruptor, los aprobados de mientras reciben su invitacion sin que
+        # nadie tenga que ir a buscarlos.
+        log.info(
+            f"{c.get('name')}: aprobado, pero la invitacion al IQ esta apagada "
+            "(IQ_INVITACION_ACTIVA). Queda pendiente."
+        )
+        return
     email = (c.get("email") or "").strip()
     nombre = (c.get("name") or "").strip()
     if not email:

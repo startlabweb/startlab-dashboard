@@ -100,6 +100,16 @@ class Settings:
     # simulacion se registra exactamente lo que se habria mandado, sin mandarlo.
     IQ_CORREO_ACTIVO: bool = os.getenv("IQ_CORREO_ACTIVO", "false").lower() == "true"
 
+    # Interruptor aparte para la invitacion al IQ Test. Existe porque los dos
+    # correos maduran a distinto ritmo: el del formulario se probo primero y
+    # puede salir en vivo, mientras el del IQ todavia manda a un flujo (agendar
+    # turno -> entrar a la sesion) que no se recorrio de punta a punta. Sin esta
+    # separacion, prender uno obliga a prender el otro y un candidato real
+    # recibiria un camino sin probar.
+    IQ_INVITACION_ACTIVA: bool = (
+        os.getenv("IQ_INVITACION_ACTIVA", "false").lower() == "true"
+    )
+
     # Desde que buzon de Startlab sale el correo. La cuenta de servicio se hace
     # pasar por el, asi que un admin de Workspace tiene que autorizarle el scope
     # `gmail.send` una vez.
