@@ -534,8 +534,29 @@ def _process_video(monitor, candidate, candidate_id, emit_event):
     monitor_id = monitor["id"]
     sheet_row = candidate["sheet_row"]
     name = candidate.get("name", "Unknown")
-    video_source = candidate.get("video_source", "none")
     video_url = candidate.get("video_url", "")
+
+    # La fuente se vuelve a detectar ACA en vez de confiar en la que quedo
+    # guardada al ingerir la fila.
+    #
+    # Por que: la deteccion mejora con el tiempo (el `?sid=` de Loom, los links
+    # de carpeta de Drive), y un candidato ya ingerido quedaba con la
+    # clasificacion vieja que ningun reintento podia corregir. Tres filas del
+    # Consultor quedaron clasificadas como 'loom' cuando eran carpetas de Drive:
+    # cada reintento volvia a mandarle una carpeta a yt-dlp y fallaba igual, con
+    # un mensaje que no decia nada. Se corrigio la deteccion y seguian rotas.
+    #
+    # Ademas se guarda la fuente corregida, para que la base se cure sola.
+    detectada = None
+    if video_url:
+        detectada, _ = detect_video_source(video_url)
+    video_source = detectada or candidate.get("video_source", "none")
+    if detectada and detectada != candidate.get("video_source"):
+        log.info(
+            f"Row {sheet_row}: la fuente del video cambio de "
+            f"{candidate.get('video_source')} a {detectada}"
+        )
+        db.update_candidate(candidate_id, {"video_source": detectada})
 
     if video_source == "none":
         db.update_candidate(candidate_id, {"video_status": "no_video"})
