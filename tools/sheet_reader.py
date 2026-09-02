@@ -125,7 +125,66 @@ _RE_LOOM = re.compile(r"loom\.com/(?:share|embed)/([a-fA-F0-9]{16,})")
 # corto del parametro ?sid= de Loom se confunda con un file_id.
 _RE_DRIVE_FILE = re.compile(r"drive\.google\.com/file/d/([a-zA-Z0-9_-]{20,})")
 _RE_DRIVE_OPEN = re.compile(r"drive\.google\.com/(?:open|uc)\?[^#]*\bid=([a-zA-Z0-9_-]{20,})")
-_RE_DRIVE_FOLDER = re.compile(r"drive\.google\.com/drive/folders/")
+# Captura el id, y tolera el /u/0/ que Drive mete cuando la persona tiene
+# varias cuentas: `drive.google.com/drive/u/0/folders/<id>`.
+_RE_DRIVE_FOLDER = re.compile(
+    r"drive\.google\.com/drive/(?:u/\d+/)?folders/([a-zA-Z0-9_-]{20,})"
+)
+
+
+_carpetas_resueltas: dict[str, str | None] = {}
+
+
+def _video_dentro_de_carpeta(folder_id: str) -> str | None:
+    """El unico video de una carpeta compartida, o None.
+
+    Por que existe: un porcentaje chico pero constante de candidatos comparte la
+    CARPETA en vez del archivo. Antes eso los dejaba en "sin video evaluable" y
+    el Gate 1 los rechazaba por un error de forma, no por su video.
+
+    Si hay exactamente un video, se usa. Si hay dos o ninguno **no se adivina**:
+    ponerle a alguien la nota del video de otro archivo es peor que no evaluarlo.
+    Es la misma regla que el matcheo de las grabaciones de las sesiones.
+    """
+    if folder_id in _carpetas_resueltas:
+        return _carpetas_resueltas[folder_id]
+
+    resultado = None
+    try:
+        from tools.drive_metadata import get_drive_service
+
+        svc = get_drive_service()
+        r = (
+            svc.files()
+            .list(
+                q=f"'{folder_id}' in parents and trashed=false",
+                fields="files(id,name,mimeType)",
+                pageSize=25,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            )
+            .execute()
+        )
+        videos = [
+            f for f in r.get("files", []) if str(f.get("mimeType", "")).startswith("video/")
+        ]
+        if len(videos) == 1:
+            resultado = videos[0]["id"]
+            log.info(
+                f"Carpeta {folder_id}: un solo video ({videos[0]['name'][:50]}), se usa ese"
+            )
+        elif len(videos) > 1:
+            log.warning(
+                f"Carpeta {folder_id}: {len(videos)} videos adentro, no se adivina cual. "
+                "Hay que pedirle al candidato el link del archivo."
+            )
+        else:
+            log.warning(f"Carpeta {folder_id}: sin videos adentro")
+    except Exception as e:
+        log.warning(f"No se pudo mirar dentro de la carpeta {folder_id}: {str(e)[:150]}")
+
+    _carpetas_resueltas[folder_id] = resultado
+    return resultado
 
 
 def detect_video_url(url: str) -> tuple[str, str | None]:
@@ -153,9 +212,14 @@ def detect_video_url(url: str) -> tuple[str, str | None]:
     if _RE_LOOM.search(url):
         return ("loom", url)
 
-    # 2. Carpeta de Drive: no es un archivo, no se puede descargar
-    if _RE_DRIVE_FOLDER.search(url):
-        log.warning(f"Link de carpeta de Drive, no de archivo: {url[:120]}")
+    # 2. Carpeta de Drive. No es un archivo, pero antes de descartarla se mira
+    #    adentro: si tiene un solo video, es evidente cual quiso mandar.
+    m_carpeta = _RE_DRIVE_FOLDER.search(url)
+    if m_carpeta:
+        file_id = _video_dentro_de_carpeta(m_carpeta.group(1))
+        if file_id:
+            return ("google_drive", file_id)
+        log.warning(f"Link de carpeta de Drive sin un video claro adentro: {url[:120]}")
         return ("none", None)
 
     # 3. Archivo de Drive
