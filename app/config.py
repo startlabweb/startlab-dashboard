@@ -59,6 +59,17 @@ class Settings:
     # sistema funciona igual (el estado sigue estando en la planilla).
     SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
 
+    # Alternativa al webhook: un bot token del workspace + el canal. Se agrego
+    # porque no existia ningun webhook de Start Lab y crear uno requiere
+    # autorizar una app dentro de Slack, que es una accion de persona; el bot
+    # token ya existia. El webhook tiene prioridad si algun dia se crea.
+    #
+    # El bot TIENE que estar invitado al canal: con `chat:write` solo puede
+    # escribir donde esta, y sin `chat:write.public` no puede entrar solo.
+    # `SLACK_CANAL` acepta el ID (recomendado, ej. C01ABC2DEF3) o el nombre.
+    SLACK_BOT_TOKEN: str = os.getenv("SLACK_BOT_TOKEN", "")
+    SLACK_CANAL: str = os.getenv("SLACK_CANAL", "")
+
     # URL publica del dashboard. Solo se usa para poner el link en el aviso.
     DASHBOARD_URL: str = os.getenv("DASHBOARD_URL", "")
 
