@@ -1,16 +1,14 @@
--- 005: la sesion de IQ conducida por la IA, en vivo, sin agendamiento.
+-- 005: la sesion de IQ conducida por la IA, con turno elegido por el candidato.
 --
 -- Por que existe: hasta la 004 la sesion la conducia una persona y de ahi
 -- quedaba una grabacion en Drive que el sistema encontraba por el nombre del
 -- archivo. Ahora la sesion la crea y la conduce el propio sistema, asi que hay
--- que guardar de que reunion se trata, que bot la atendio y con que link entro
--- el candidato.
+-- que guardar de que reunion se trata, que bot la atendio, con que link entro el
+-- candidato y a que hora eligio rendir.
 --
--- La decision de diseño detras de `iq_session_token`: NO hay agendamiento. El
--- correo le manda al candidato un link nuestro, unico e irrepetible; cuando lo
--- abre, recien ahi se crea la reunion de Zoom y se lanza el bot. Asi el
--- candidato entra cuando quiere, nunca hay dos en la misma sala, y no se paga
--- un bot esperando a alguien que no aparecio.
+-- `iq_session_token` es el link del correo: unico por persona, el mismo de
+-- principio a fin. Sin horario elegido muestra los turnos, con horario dice
+-- cuando es, y a la hora entra.
 --
 -- Correr a mano en el SQL Editor de Supabase, despues de 004. Es idempotente.
 
