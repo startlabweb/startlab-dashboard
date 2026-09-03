@@ -16,7 +16,7 @@ Se trata de una **sesión de máximo 15 minutos por Zoom con una IA**, que te pr
 
 Posteriormente, **nuestro equipo revisará tus diagnósticos** y, en un plazo máximo de **10 días hábiles**, te notificaremos el resultado. Quienes obtengan el mejor rendimiento avanzarán a una entrevista con nuestro equipo.
 
-🔒 **Privacidad:** toda la información recopilada durante la sesión será tratada de forma confidencial y utilizada exclusivamente para evaluar tu candidatura. Utilizamos Zoom por sus medidas de seguridad y privacidad, buscando proteger la información compartida y reducir riesgos de confidencialidad, ciberseguridad y plagio.
+🔒 **Privacidad:** la sesión **queda grabada**, y la grabación **no sale de Start Lab**. Toda la información recopilada será tratada de forma confidencial y utilizada exclusivamente para evaluar tu candidatura. Utilizamos Zoom por sus medidas de seguridad y privacidad, buscando proteger la información compartida y reducir riesgos de confidencialidad, ciberseguridad y plagio.
 
 ¡Mucho éxito! 🚀
 

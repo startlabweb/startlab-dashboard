@@ -31,7 +31,7 @@ from pydantic import BaseModel
 from app import database as db
 from app.config import settings
 from app.services import turnos
-from tools import recall, zoom
+from tools import calendario, recall, zoom
 from tools.logger import get_logger
 
 router = APIRouter()
@@ -114,6 +114,28 @@ async def agendar(token: str, req: ReservaRequest):
         c["monitor_id"], "iq_turno_reservado",
         f"{c.get('name')} agendo su sesion de IQ: {r['etiqueta']} a las {r['hora_local']}",
     )
+
+    # La invitacion de calendario va DESPUES de reservar y no puede voltear la
+    # reserva: el turno ya es suyo. Si Google falla, se queda sin recordatorio
+    # pero con su horario y su link -- perder la invitacion no puede costarle la
+    # sesion. Por eso el resultado solo se loguea.
+    email = (c.get("email") or "").strip()
+    if email:
+        cuando = datetime.fromisoformat(req.iso)
+        if cuando.tzinfo is None:
+            cuando = cuando.replace(tzinfo=timezone.utc)
+        inv = calendario.crear_evento(
+            email=email,
+            nombre=c.get("name") or "",
+            cuando=cuando.astimezone(timezone.utc),
+            link=f"{_base_publica()}/iq/entrar/{token}",
+        )
+        r["invitacion"] = inv["ok"]
+        if not inv["ok"]:
+            log.warning(
+                f"{c.get('name')}: turno reservado pero sin invitacion de "
+                f"calendario ({inv['motivo'][:120]})"
+            )
     return r
 
 

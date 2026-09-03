@@ -35,13 +35,15 @@
 <div class="caja">
   <div class="marca">Start <span>Lab</span></div>
   <h1>Agenda tu Business IQ Test{% if nombre %}, {{ nombre }}{% endif %}</h1>
-  <p class="intro">Elige el horario que mejor te quede. Los horarios están en <b>hora de Chile</b>.</p>
+  <p class="intro">Elige el horario que mejor te quede. Los horarios se muestran en <b id="zona">tu hora local</b>.</p>
 
   <div class="datos">
     Son <b>máximo 15 minutos</b> por Zoom con una IA, que te presentará dos casos de
     negocios online para que identifiques sus principales cuellos de botella.<br>
     No hace falta que prepares nada. <b>Esto no es una entrevista</b> y la IA no
-    evalúa tu desempeño: solo facilita el examen y recopila tus respuestas.
+    evalúa tu desempeño: solo facilita el examen y recopila tus respuestas.<br>
+    <b>La sesión queda grabada</b> y la grabación no sale de Start Lab: se usa
+    únicamente para evaluar tu candidatura.
   </div>
 
   {% if dias %}
@@ -70,6 +72,48 @@
 const TOKEN = "{{ token }}";
 const aviso = document.getElementById("aviso");
 
+/* Los turnos llegan en UTC y se muestran en la zona del candidato. No todos son
+   de Chile: un colombiano tiene que ver su hora, no la nuestra. Y no se le
+   pregunta la zona -- el navegador ya la sabe, y preguntar es una cosa mas que
+   el candidato puede errar. */
+const ZONA = Intl.DateTimeFormat().resolvedOptions().timeZone || "tu zona";
+document.getElementById("zona").textContent = "hora de " + ZONA.split("/").pop().replace(/_/g, " ");
+
+const F_HORA = new Intl.DateTimeFormat("es", {hour:"2-digit", minute:"2-digit", hour12:false});
+const F_DIA  = new Intl.DateTimeFormat("es", {weekday:"long", day:"numeric", month:"long"});
+
+/* Un turno puede caer en otro dia en la zona del candidato (las 9:00 de Chile
+   son las 23:00 del dia anterior en Manila). Asi que los dias se reagrupan por
+   la fecha LOCAL, no por la que calculo el servidor. */
+(function reagrupar(){
+  const porDia = new Map();
+  document.querySelectorAll(".turno").forEach(function(b){
+    const d = new Date(b.dataset.iso);
+    b.textContent = F_HORA.format(d);
+    const clave = d.toDateString();
+    if (!porDia.has(clave)) porDia.set(clave, {etiqueta: F_DIA.format(d), botones: []});
+    porDia.get(clave).botones.push(b);
+  });
+
+  const contenedor = document.querySelector(".caja");
+  const ancla = document.getElementById("aviso");
+  document.querySelectorAll(".dia").forEach(function(x){ x.remove(); });
+
+  Array.from(porDia.entries())
+    .sort(function(a, b){ return new Date(a[0]) - new Date(b[0]); })
+    .forEach(function(par){
+      const bloque = document.createElement("div");
+      bloque.className = "dia";
+      const h2 = document.createElement("h2");
+      h2.textContent = par[1].etiqueta;
+      const fila = document.createElement("div");
+      fila.className = "turnos";
+      par[1].botones.forEach(function(b){ fila.appendChild(b); });
+      bloque.appendChild(h2); bloque.appendChild(fila);
+      contenedor.insertBefore(bloque, ancla);
+    });
+})();
+
 function mostrar(texto, clase){
   aviso.textContent = texto;
   aviso.className = "visible " + clase;
@@ -93,9 +137,10 @@ document.querySelectorAll(".turno").forEach(function(b){
       });
       const d = await r.json();
       if (r.ok) {
-        mostrar("¡Listo! Tu sesión quedó agendada para el " + d.etiqueta +
-                " a las " + d.hora_local + " (hora de Chile). Vuelve a este mismo " +
-                "link cinco minutos antes y entrarás directo.", "ok");
+        const cuando = new Date(b.dataset.iso);
+        mostrar("¡Listo! Tu sesión quedó agendada para el " + F_DIA.format(cuando) +
+                " a las " + F_HORA.format(cuando) + " (tu hora local). Vuelve a " +
+                "este mismo link cinco minutos antes y entrarás directo.", "ok");
         document.querySelectorAll(".dia").forEach(function(x){ x.style.display = "none"; });
       } else {
         mostrar(d.detail || "No pudimos reservar ese horario.", "mal");
