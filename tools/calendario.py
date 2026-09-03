@@ -69,12 +69,14 @@ def crear_evento(
         "start": {"dateTime": cuando.isoformat(), "timeZone": "UTC"},
         "end": {"dateTime": fin.isoformat(), "timeZone": "UTC"},
         "attendees": [{"email": email, "displayName": nombre or email}],
+        # Solo el aviso en pantalla. El recordatorio por mail una hora antes se
+        # saco por pedido de Jossy (3-sep-2026): entre la invitacion al IQ, la
+        # invitacion de calendario y el recordatorio, al candidato le llegaban
+        # tres correos por una sesion de 15 minutos. El aviso en pantalla cumple
+        # la misma funcion sin sumar bandeja.
         "reminders": {
             "useDefault": False,
-            "overrides": [
-                {"method": "email", "minutes": 60},
-                {"method": "popup", "minutes": 10},
-            ],
+            "overrides": [{"method": "popup", "minutes": 10}],
         },
         # Sin permiso para invitar a otros ni ver la lista: es una sesion de
         # examen, no una reunion de equipo.
