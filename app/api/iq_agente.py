@@ -181,7 +181,21 @@ async def crear_clave(t: str | None = Query(None), n: str | None = Query(None)):
                     # transcribio una respuesta en arabe y convirtio "setters" en
                     # "haters" -- una palabra asi cambia la evaluacion entera.
                     "transcription": {"model": "gpt-4o-transcribe", "language": "es"},
-                    "turn_detection": {"type": "semantic_vad"},
+                    "turn_detection": {
+                        "type": "semantic_vad",
+                        # `interrupt_response: False` es lo que evita que la IA se
+                        # corte a si misma. En la prueba real el candidato dijo
+                        # "Vamos" mientras leia el Caso 2: eso cancelo la
+                        # respuesta, y al generar otra REPITIO media lectura,
+                        # arrancando a mitad de palabra. Un examen no necesita que
+                        # se lo pueda interrumpir -- necesita que el caso se lea
+                        # entero, una sola vez.
+                        "interrupt_response": False,
+                        # Y que espere un poco mas antes de dar por terminado el
+                        # turno del candidato: los silencios pensando una
+                        # respuesta son parte del examen, no el final de ella.
+                        "eagerness": "low",
+                    },
                 },
                 "output": {"voice": settings.IQ_VOZ},
             },
