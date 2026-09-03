@@ -12,6 +12,8 @@ Se trata de una **sesión de máximo 15 minutos por Zoom con una IA**, que te pr
 2. Únete al Zoom en el horario seleccionado, desde ese mismo enlace.
 3. La IA te presentará los casos y recopilará tus respuestas.
 
+💡 **Guarda este enlace.** Es el mismo para todo: para agendar, para **cambiar tu horario** si lo necesitas, y para entrar a la sesión el día que te toque.
+
 ⚠️ **Esto no es una entrevista y la IA no evalúa tu desempeño.** Funciona únicamente como facilitadora del examen oral y recopila tus respuestas.
 
 Posteriormente, **nuestro equipo revisará tus diagnósticos** y, en un plazo máximo de **10 días hábiles**, te notificaremos el resultado. Quienes obtengan el mejor rendimiento avanzarán a una entrevista con nuestro equipo.

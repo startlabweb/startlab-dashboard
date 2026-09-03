@@ -57,6 +57,7 @@ def crear_evento(
         "description": (
             "Tu sesión del Business IQ Test de Start Lab.\n\n"
             f"Entra por este enlace a la hora acordada:\n{link}\n\n"
+            "Ese mismo enlace te sirve para cambiar tu horario si lo necesitas.\n\n"
             "Son máximo 15 minutos. Te vamos a presentar dos casos de negocios "
             "online para que identifiques sus principales cuellos de botella.\n\n"
             "No hace falta que prepares nada. Esto no es una entrevista: la IA "
