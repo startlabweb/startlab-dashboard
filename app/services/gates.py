@@ -142,6 +142,37 @@ def estado_texto(monitor: dict, c: dict) -> str:
 
 
 
+def _invitar_pendientes(monitor: dict, estados: list[dict]) -> int:
+    """Invita a todo aprobado que todavia no recibio su link. Devuelve cuantos.
+
+    Por que existe, y por que no alcanzaba invitar al detectar el cambio de
+    decision: la primera version llamaba a `_invitar_al_iq` solo cuando la celda
+    de Paula pasaba de 'pendiente' a 'aprobado'. Si en ESE momento el envio
+    estaba apagado -- o Gmail fallaba, o faltaba una variable -- el candidato
+    quedaba aprobado y sin invitacion **para siempre**, porque el cambio ya
+    habia pasado y no volvia a ocurrir nunca.
+
+    La condicion correcta es un estado, no un evento: "aprobado y sin invitar".
+    Se revisa en cada ciclo, asi que cualquier cosa que haya fallado antes se
+    arregla sola en el siguiente.
+    """
+    pendientes = [
+        c
+        for c in estados
+        if c.get("gate1_decision") == "aprobado" and not c.get("iq_invited_at")
+    ]
+    if not pendientes:
+        return 0
+
+    invitados = 0
+    for c in pendientes[:MAX_POR_AVISO]:
+        antes = c.get("iq_invited_at")
+        _invitar_al_iq(monitor, c)
+        if c.get("iq_invited_at") and not antes:
+            invitados += 1
+    return invitados
+
+
 def _invitar_al_iq(monitor: dict, c: dict) -> None:
     """Le manda al candidato aprobado el link para agendar su sesion de IQ.
 
@@ -301,8 +332,9 @@ def _sincronizar_aprobaciones(
             f"{c.get('name') or 'sin nombre'} (fila {sheet_row}): Paula marco {nueva}",
         )
 
-        if nueva == "aprobado":
-            _invitar_al_iq(monitor, c)
+        # No se invita aca: lo hace `_invitar_pendientes` mas adelante en el
+        # mismo ciclo, mirando el estado y no el cambio. Asi un envio que falle
+        # se reintenta en el proximo ciclo en vez de perderse.
 
     if cambios:
         log.info(f"Monitor {monitor['id']}: {cambios} decisiones de Paula sincronizadas")
@@ -558,7 +590,8 @@ def ciclo(monitor: dict, headers: list[str], data_rows: list[list[str]], emit_ev
        corte existiera entran igual;
     2. **leer la decision de Paula** de la planilla;
     3. **avisar a Slack** a los nuevos que pasaron y todavia no se avisaron;
-    4. **buscar en Drive** la sesion de los aprobados.
+    4. **invitar al IQ** a los aprobados que todavia no tienen su link;
+    5. **buscar en Drive** la sesion de los aprobados.
 
     Si algo de esto falla (Drive caido, webhook vencido) NO puede romper la
     ingesta: el llamador lo envuelve en try/except y el estado real vive en la
@@ -575,5 +608,6 @@ def ciclo(monitor: dict, headers: list[str], data_rows: list[list[str]], emit_ev
         "gates": _persistir_gates(monitor, estados),
         "decisiones": _sincronizar_aprobaciones(monitor, headers, data_rows, estados),
         "avisados": _avisar_gate1(monitor, estados),
+        "invitados": _invitar_pendientes(monitor, estados),
         "sesiones": _matchear_sesiones(monitor, estados, emit_event),
     }
