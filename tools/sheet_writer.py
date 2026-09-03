@@ -6,6 +6,11 @@ from tools.sheet_reader import get_worksheet
 
 log = get_logger("sheet_writer")
 
+# Planillas a las que ya se les aviso que no tienen columna de total. En
+# memoria: es un antirruido, y que se pierda en un reinicio solo cuesta un
+# aviso mas.
+_sin_total_avisado: set[tuple[str, str]] = set()
+
 
 def _find_column(headers: list[str], name: str) -> int | None:
     """Find 1-based column index by header name (case-insensitive exact match)."""
@@ -111,10 +116,28 @@ def write_totals_formula(
     col_total = _find_column(headers, total_column)
     col_a = _find_column(headers, sum_columns[0])
     col_b = _find_column(headers, sum_columns[1])
-    if not col_total or not col_a or not col_b:
+    # Sin columna de total, la planilla simplemente no quiere total: es una
+    # decision, no una falla. Antes esto gritaba ERROR cada 90 segundos por cada
+    # monitor -- ninguna de las tres planillas tiene esa columna -- y el ruido
+    # tapaba errores de verdad. Se avisa UNA vez por planilla y se sigue.
+    if not col_total:
+        clave = (sheet_id, worksheet_name)
+        if clave not in _sin_total_avisado:
+            _sin_total_avisado.add(clave)
+            log.info(
+                f"La hoja '{worksheet_name}' no tiene columna '{total_column}': "
+                "no se escribe el total. Si se la quiere, hay que crearla a mano."
+            )
+        return
+
+    # En cambio, una columna de total CON las sumandas mal es una configuracion
+    # rota de verdad: alguien creo el total esperando que se llene y no se va a
+    # llenar nunca. Eso si merece un error.
+    if not col_a or not col_b:
         log.error(
-            f"Columnas del total no encontradas (total={col_total}, "
-            f"{sum_columns[0]}={col_a}, {sum_columns[1]}={col_b}) en: {headers}"
+            f"La hoja '{worksheet_name}' tiene '{total_column}' pero le faltan las "
+            f"columnas a sumar ({sum_columns[0]}={col_a}, {sum_columns[1]}={col_b}). "
+            "El total no se va a llenar hasta que los nombres coincidan."
         )
         return
 
