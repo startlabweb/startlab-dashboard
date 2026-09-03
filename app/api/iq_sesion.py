@@ -261,10 +261,24 @@ async def entrar(request: Request, token: str):
         raise HTTPException(status_code=500, detail="Monitor inexistente")
 
     # 1. La sala, con la sala de espera apagada por API para que el bot entre solo.
-    reunion = zoom.crear_reunion(
-        titulo=f"Business IQ Test — {nombre}".strip(" —"),
-        duracion_min=30,
-    )
+    #
+    # Va envuelto porque lo que se cae aca no es culpa del candidato y no puede
+    # verlo en crudo: la primera vez que esto fallo -- faltaban las credenciales
+    # de Zoom en produccion -- la persona recibio un "Internal Server Error"
+    # justo en el momento de rendir su examen.
+    try:
+        reunion = zoom.crear_reunion(
+            titulo=f"Business IQ Test — {nombre}".strip(" —"),
+            duracion_min=30,
+        )
+    except Exception as e:
+        log.error(f"{nombre}: no se pudo crear la reunion de Zoom: {str(e)[:250]}")
+        return _pagina(
+            request, "No pudimos abrir tu sala",
+            "Tuvimos un problema técnico de nuestro lado, no tuyo. Vuelve a "
+            "cargar esta página en un minuto; si sigue igual, escríbenos al "
+            "correo desde el que te invitamos y te damos otro horario.",
+        )
 
     # 2. El bot, que abre la sala del IQ y la transmite a esa reunion. El nombre
     #    del candidato viaja en la URL para que la IA lo salude por su nombre;
