@@ -45,11 +45,35 @@ class ReservaRequest(BaseModel):
     iso: str          # el horario elegido, en UTC
 
 
-def _pagina(request: Request, titulo: str, texto: str) -> HTMLResponse:
-    """Una pantalla simple para el candidato. Sin dashboard ni datos internos."""
+def _pagina(
+    request: Request,
+    titulo: str,
+    texto: str,
+    accion: str | None = None,
+    token: str | None = None,
+) -> HTMLResponse:
+    """Una pantalla simple para el candidato. Sin dashboard ni datos internos.
+
+    `accion` pone un boton que libera el turno y lo devuelve a elegir otro.
+    """
     return templates.TemplateResponse(
         request=request, name="iq_mensaje.html",
-        context={"titulo": titulo, "texto": texto},
+        context={"titulo": titulo, "texto": texto, "accion": accion, "token": token},
+    )
+
+
+def _cuando_en_texto(cuando: datetime) -> str:
+    """La fecha del turno en palabras.
+
+    Va en hora de Chile porque esto se arma del lado del servidor y no sabemos
+    donde esta la persona. La pantalla donde ELIGE si lo muestra en su zona (lo
+    hace el navegador), y la invitacion de calendario tambien. Aca se aclara cual
+    es para que nadie se confunda de huso.
+    """
+    local = cuando.astimezone(turnos.TZ)
+    return (
+        f"el {turnos._etiqueta_dia(local.date())} a las "
+        f"{local.strftime('%H:%M')} (hora de Chile)"
     )
 
 
@@ -139,6 +163,34 @@ async def agendar(token: str, req: ReservaRequest):
     return r
 
 
+@router.post("/reagendar/{token}")
+async def reagendar(token: str):
+    """Libera el turno del candidato para que elija otro.
+
+    Existe porque a la gente le cambian los planes: sin esto, quien reservo un
+    turno y no puede llegar no tiene forma de avisar, y el sistema le arma una
+    sala a la que nadie entra. Liberar el turno tambien lo devuelve a la lista
+    para otro candidato.
+
+    No se puede reagendar una sesion ya empezada: si el bot existe, la sala esta
+    creada y la persona ya rindio o esta rindiendo.
+    """
+    c = _buscar_por_token(token)
+    if c.get("iq_bot_id") or c.get("iq_status") in ("completed", "processing", "pending"):
+        raise HTTPException(
+            status_code=409,
+            detail="Tu sesión ya empezó o ya fue registrada, no se puede cambiar.",
+        )
+
+    db.update_candidate(c["id"], {"iq_slot_at": None})
+    db.log_activity(
+        c["monitor_id"], "iq_turno_liberado",
+        f"{c.get('name')} libero su turno para elegir otro",
+    )
+    log.info(f"{c.get('name')}: turno liberado")
+    return {"ok": True}
+
+
 @router.get("/entrar/{token}", response_class=HTMLResponse)
 async def entrar(request: Request, token: str):
     """El unico link del candidato. Hace una cosa distinta segun el momento:
@@ -182,12 +234,26 @@ async def entrar(request: Request, token: str):
     # tiempo significa pagar un bot esperando, y encima ocuparia la unica reunion
     # que la licencia de Zoom permite tener activa.
     if not turnos.en_ventana(c["iq_slot_at"]):
-        cuando = datetime.fromisoformat(c["iq_slot_at"]).astimezone(turnos.TZ)
+        cuando = datetime.fromisoformat(c["iq_slot_at"])
+        if cuando.tzinfo is None:
+            cuando = cuando.replace(tzinfo=timezone.utc)
+
+        # Turno ya pasado. Antes esta misma pantalla decia "te esperamos a las
+        # 11:30" para una hora vencida, y el candidato no tenia como salir de
+        # ahi: le quedaba un link que le prometia una sesion imposible.
+        if cuando < datetime.now(timezone.utc):
+            return _pagina(
+                request, "Tu turno ya pasó",
+                "No alcanzamos a tomarte la sesión en el horario que elegiste. "
+                "No hay problema: elige otro y seguimos.",
+                accion="Elegir otro horario", token=token,
+            )
+
         return _pagina(
             request, "Tu sesión está agendada",
-            f"Te esperamos el {turnos._etiqueta_dia(cuando.date())} a las "
-            f"{cuando.strftime('%H:%M')} (hora de Chile). Vuelve a este mismo "
-            "link cinco minutos antes y entrarás directo.",
+            f"Te esperamos {_cuando_en_texto(cuando)}. Vuelve a este mismo link "
+            "cinco minutos antes y entrarás directo.",
+            accion="Cambiar mi horario", token=token,
         )
 
     monitor = db.get_monitor(c["monitor_id"])

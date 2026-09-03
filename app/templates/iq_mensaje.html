@@ -6,7 +6,7 @@
 <title>{{ titulo }} — Start Lab</title>
 <link href="https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  :root{--midnight:#121212;--card:#1E1E1E;--gold:#EAB660;--text:#F2F2F2;--muted:#8A8A8A;}
+  :root{--midnight:#121212;--card:#1E1E1E;--border:#333;--gold:#EAB660;--gold-dim:#C09D46;--text:#F2F2F2;--muted:#8A8A8A;--bad:#F87171;}
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--midnight);color:var(--text);font-family:"Red Hat Display",system-ui,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:30px}
   .caja{max-width:560px;text-align:center}
@@ -14,6 +14,11 @@
   .marca span{color:var(--gold)}
   h1{font-size:36px;font-weight:800;letter-spacing:-.5px;margin-bottom:18px}
   p{font-size:19px;line-height:1.6;color:var(--muted)}
+  #accion{margin-top:30px;background:var(--gold);color:#1a1a1a;border:0;border-radius:10px;padding:15px 34px;font-family:inherit;font-size:17px;font-weight:600;cursor:pointer}
+  #accion:hover{background:var(--gold-dim)}
+  #accion:disabled{opacity:.5;cursor:default}
+  #error{margin-top:20px;font-size:16px;color:var(--bad);display:none}
+  #error.visible{display:block}
   footer{margin-top:40px;font-size:13px;color:#5f5f5f}
 </style>
 </head>
@@ -22,7 +27,43 @@
   <div class="marca">Start <span>Lab</span></div>
   <h1>{{ titulo }}</h1>
   <p>{{ texto }}</p>
+
+  {% if accion and token %}
+  <button id="accion">{{ accion }}</button>
+  <div id="error"></div>
+  {% endif %}
+
   <footer>Start Lab · Business IQ Test</footer>
 </div>
+
+{% if accion and token %}
+<script>
+const boton = document.getElementById("accion");
+const error = document.getElementById("error");
+
+boton.addEventListener("click", async function(){
+  boton.disabled = true;
+  boton.textContent = "Un momento...";
+  try {
+    const r = await fetch("/iq/reagendar/{{ token }}", {method: "POST"});
+    if (r.ok) {
+      /* Se recarga en vez de armar la grilla acá: el mismo link ya sabe qué
+         mostrar según el estado, y liberar el turno lo devuelve a la pantalla
+         de elegir horario. Un solo lugar decide qué ve el candidato. */
+      location.reload();
+      return;
+    }
+    const d = await r.json().catch(function(){ return {}; });
+    error.textContent = d.detail || "No pudimos liberar tu horario. Escríbenos al correo desde el que te invitamos.";
+    error.className = "visible";
+  } catch (e) {
+    error.textContent = "Hubo un problema de conexión. Intenta de nuevo.";
+    error.className = "visible";
+  }
+  boton.disabled = false;
+  boton.textContent = "{{ accion }}";
+});
+</script>
+{% endif %}
 </body>
 </html>
