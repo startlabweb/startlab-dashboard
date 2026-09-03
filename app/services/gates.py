@@ -414,10 +414,18 @@ def _avisar_gate1(monitor: dict, estados: list[dict]) -> int:
         return 0
 
     tanda = pendientes[:MAX_POR_AVISO]
+
+    # Los errores que se mencionan al pie son solo los de candidatos que todavia
+    # esperan atencion: sin avisar y sin decision de Paula. Antes se contaban
+    # TODOS, asi que un aviso sobre dos candidatos nuevos arrastraba "16
+    # quedaron sin evaluar" de una convocatoria vieja que Paula ya estaba
+    # resolviendo a mano. Un numero que no cambia nunca deja de ser informacion.
     errores = sum(
         1
         for c in estados
-        if c.get("written_status") == "error" or c.get("video_status") == "error"
+        if (c.get("written_status") == "error" or c.get("video_status") == "error")
+        and not c.get("gate1_notified_at")
+        and (c.get("gate1_decision") or "pendiente") == "pendiente"
     )
 
     if not slack.enviar(_texto_aviso(monitor, tanda, len(pendientes), errores)):
