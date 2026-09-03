@@ -339,13 +339,21 @@ def process_one(monitor: dict, candidate: dict, emit_event: Callable) -> bool:
         if fresco.get("video_status") in ("pending", "error"):
             _process_video(monitor, fresco, candidate_id, emit_event)
 
-    # Tercera etapa (Business IQ Test). Un candidato solo llega a 'pending' si
-    # Paula lo aprobo y el ciclo de gates le encontro la sesion en Drive, asi que
-    # aca no hace falta volver a chequear el embudo.
-    if gates.etapa_iq_activa(monitor):
-        fresco = db.get_candidate(candidate_id) or candidate
-        if fresco.get("iq_status") in ("pending", "error"):
-            _process_iq(monitor, fresco, candidate_id, emit_event)
+    # Tercera etapa (Business IQ Test). El `iq_status` es la unica condicion: un
+    # candidato solo llega a 'pending' si hay algo real que evaluar -- o el ciclo
+    # de gates le encontro su grabacion en Drive, o la sala guardo la
+    # transcripcion de su sesion con la IA.
+    #
+    # Antes esto estaba detras de `gates.etapa_iq_activa(monitor)`, que pide que
+    # el monitor tenga carpeta de grabaciones. Tenia sentido cuando Drive era la
+    # unica fuente; con la sesion conducida por la IA no hace falta ninguna
+    # carpeta, asi que el candidato quedaba fuera. Y fallaba en silencio de la
+    # peor forma: se lo reclamaba, se salteaban las tres fases, quedaba sin
+    # terminar y se le sumaba un intento. A los tres ciclos se trababa para
+    # siempre, con su examen rendido y sin nota, sin un solo error en el log.
+    fresco = db.get_candidate(candidate_id) or candidate
+    if fresco.get("iq_status") in ("pending", "error"):
+        _process_iq(monitor, fresco, candidate_id, emit_event)
 
     final = db.get_candidate(candidate_id) or {}
     ws = final.get("written_status")
