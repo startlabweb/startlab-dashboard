@@ -265,7 +265,7 @@ async def guardar_transcripcion(req: TranscripcionRequest):
     r = (
         db.get_db()
         .table("candidates")
-        .select("id,name,monitor_id,iq_status")
+        .select("id,name,monitor_id,iq_status,iq_bot_id")
         .eq("iq_session_token", req.sesion)
         .limit(1)
         .execute()
@@ -294,6 +294,31 @@ async def guardar_transcripcion(req: TranscripcionRequest):
             f"{c.get('name')}: sesion cerrada ({len(req.texto)} caracteres), a la cola de correccion",
         )
         log.info(f"{c.get('name')}: sesion terminada, {len(req.texto)} chars")
+
+        # Sacar el bot de la reunion. Nadie lo hacia: la pagina cerraba su
+        # conexion de voz y el bot se quedaba adentro transmitiendo la pantalla
+        # de "Gracias" hasta que Recall lo echara por su cuenta. Dos costos:
+        # Recall cobra por minuto de bot en la llamada, y sobre todo la reunion
+        # de Zoom sigue ACTIVA -- y una licencia no permite dos a la vez, asi
+        # que el turno siguiente podia quedar bloqueado por una sesion que ya
+        # habia terminado.
+        #
+        # Va en su propio try: la transcripcion ya esta guardada y la correccion
+        # es lo que importa. Un bot que no se pudo sacar es plata, no un examen
+        # perdido.
+        if c.get("iq_bot_id"):
+            try:
+                from tools import recall
+
+                recall.sacar(c["iq_bot_id"])
+                cambios["iq_bot_status"] = "retirado"
+                log.info(f"{c.get('name')}: bot {c['iq_bot_id'][:8]} retirado de la reunion")
+            except Exception as e:
+                log.error(
+                    f"{c.get('name')}: no se pudo sacar el bot {c['iq_bot_id'][:8]}: "
+                    f"{str(e)[:150]}. Va a seguir en la reunion hasta que Recall lo eche, "
+                    "y puede bloquear el turno siguiente."
+                )
 
     db.update_candidate(c["id"], cambios)
     return {"ok": True, "guardado": len(req.texto), "final": req.final}

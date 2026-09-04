@@ -217,7 +217,24 @@ def _invitar_al_iq(monitor: dict, c: dict) -> None:
     email = (fresco.get("email") or "").strip()
     nombre = (fresco.get("name") or "").strip()
     if not email:
-        log.warning(f"{nombre or 'sin nombre'} aprobado pero sin mail: no se puede invitar")
+        # Se avisa UNA vez por candidato, no en cada ciclo. Un aprobado sin mail
+        # no se arregla solo: el warning se repetiria cada 60 segundos para
+        # siempre y taparia errores de verdad -- ya nos paso con el total del
+        # Sheet, que gritaba cada 90 s y me escondio el rastro del aviso de Slack.
+        avisados = _problemas_avisados.setdefault(monitor["id"], set())
+        clave = f"sin_mail:{c['id']}"
+        if clave not in avisados:
+            avisados.add(clave)
+            log.warning(
+                f"{nombre or 'sin nombre'} (fila {c.get('sheet_row')}) aprobado pero "
+                "sin mail: no se le puede invitar. Hay que completar su correo en "
+                "la planilla."
+            )
+            db.log_activity(
+                monitor["id"], "iq_sin_mail",
+                f"{nombre or 'sin nombre'} (fila {c.get('sheet_row')}): aprobado sin "
+                "mail, no se puede invitar al IQ Test",
+            )
         return
 
     base = (settings.DASHBOARD_URL or "").strip().rstrip("/")
