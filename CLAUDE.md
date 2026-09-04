@@ -202,6 +202,19 @@ Solo los nombres; los valores están en Railway y en el `.env` local.
 - **No poner un botón de aprobar en el dashboard.** No tiene login y su URL es
   pública: la aprobación de Paula vive en la planilla, que sí tiene permisos.
 - **No reordenar filas de la planilla a mano** mientras el worker corre.
+- **No editar ni reutilizar una fila que el sistema ya leyo.** Lee cada fila UNA
+  vez, cuando aparece, y no la vuelve a mirar: el ingest saltea las filas que ya
+  existen. Si se le cambian el nombre y el mail, para el sistema sigue siendo la
+  persona original -- la nota, el `Estado` y hasta la invitacion por correo van a
+  la persona vieja. Paso el 4-sep-2026 con dos candidatos reales: se probo
+  escribiendo datos ficticios en una fila y despues se la reescribio con un
+  candidato de verdad. **Para probar, fila nueva siempre**, o mejor un candidato
+  de prueba directo en la base, que no ocupa ninguna fila.
+
+  Si ya paso: hay que **borrar el registro de la base** para que el ingest vuelva
+  a leer esa fila. No existe forma de "re-leerla". Y antes de borrarlo, limpiar
+  la celda de `Aprobacion Paula`, o el candidato nuevo entra ya aprobado con una
+  decision que era de otro.
 - **No desplegar mientras hay una sesión de IQ en curso.** El reinicio se lleva
   la transcripción que la sala guarda en memoria. Pasó con la sesión de Paula y
   se perdió la única copia con hablantes separados.

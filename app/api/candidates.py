@@ -158,7 +158,40 @@ async def sync_sheet(monitor_id: str, force: bool = False):
     if not monitor:
         raise HTTPException(status_code=404, detail="Monitor not found")
 
-    resultado = await asyncio.to_thread(sync_completed_to_sheet, monitor, force, None)
+    # La guarda de desalineacion tambien aca. Antes iba en None -- es decir,
+    # SIN guarda -- y este endpoint es justo el que se aprieta cuando algo se
+    # desalineo: reescribia las 300 celdas ignorando si la fila seguia siendo de
+    # la misma persona. Con una fila editada a mano, le habria puesto la nota de
+    # un candidato en la fila de otro. Es el error mas caro del sistema y estaba
+    # a un clic.
+    from tools.sheet_reader import read_all_rows
+
+    correos_por_fila: dict[int, str] | None = None
+    try:
+        headers, filas = await asyncio.to_thread(
+            read_all_rows, monitor["sheet_id"],
+            monitor.get("worksheet_name") or "Form Responses 1",
+        )
+        idx = next(
+            (i for i, h in enumerate(headers) if "email" in (h or "").lower()), None
+        )
+        if idx is not None:
+            correos_por_fila = {
+                n: (f[idx] if idx < len(f) else "")
+                for n, f in enumerate(filas, start=2)
+            }
+    except Exception as e:
+        # Sin poder leer la planilla no se puede verificar la alineacion, y sin
+        # verificarla no se escribe: es preferible que el sync manual falle a que
+        # cruce dos candidatos.
+        raise HTTPException(
+            status_code=503,
+            detail=f"No se pudo leer la planilla para verificar la alineacion: {str(e)[:200]}",
+        )
+
+    resultado = await asyncio.to_thread(
+        sync_completed_to_sheet, monitor, force, correos_por_fila
+    )
     await asyncio.to_thread(
         db.log_activity, monitor_id, "sheet_sync", f"Sync manual (force={force}): {resultado}"
     )
