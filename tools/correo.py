@@ -18,6 +18,7 @@ el "des-enviar". En simulacion se registra exactamente lo que se habria mandado.
 
 import base64
 import json
+import re
 import os
 from email.message import EmailMessage
 from pathlib import Path
@@ -93,6 +94,60 @@ def cargar_plantilla(plantilla: str, **valores) -> tuple[str, str]:
     return asunto, cuerpo
 
 
+def _a_html(cuerpo: str) -> str:
+    """Convierte el markdown de la plantilla a HTML.
+
+    Por que existe: las plantillas se escriben en markdown para que Paula las
+    pueda editar sin ver etiquetas, pero el correo se mandaba SOLO como texto
+    plano -- asi que los `**` y los `###` le llegaban crudos al candidato. Es
+    deliberadamente minimo: solo lo que las plantillas usan de verdad.
+    """
+    from html import escape
+
+    salida: list[str] = []
+    lista: list[str] = []
+
+    def cerrar_lista():
+        if lista:
+            salida.append("<ol>" + "".join(f"<li>{x}</li>" for x in lista) + "</ol>")
+            lista.clear()
+
+    for linea in cuerpo.splitlines():
+        cruda = linea.strip()
+        if not cruda:
+            cerrar_lista()
+            continue
+
+        seguro = escape(cruda)
+        # Negritas y links, en ese orden: escapar primero para que un nombre con
+        # `<` o `&` no rompa el HTML ni inyecte nada.
+        seguro = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", seguro)
+        seguro = re.sub(
+            r"(https?://[^\s<]+)", r'<a href="\1">\1</a>', seguro
+        )
+
+        if cruda.startswith("### "):
+            cerrar_lista()
+            salida.append(f"<h3>{seguro[4:]}</h3>")
+        elif re.match(r"^\d+\.\s", cruda):
+            lista.append(re.sub(r"^\d+\.\s*", "", seguro))
+        else:
+            cerrar_lista()
+            salida.append(f"<p>{seguro}</p>")
+    cerrar_lista()
+
+    return (
+        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;'
+        'line-height:1.6;color:#222">' + "".join(salida) + "</div>"
+    )
+
+
+def _a_texto(cuerpo: str) -> str:
+    """El cuerpo sin los simbolos del markdown, para la version de texto plano."""
+    sin = re.sub(r"\*\*(.+?)\*\*", r"\1", cuerpo)
+    return re.sub(r"^###\s*", "", sin, flags=re.MULTILINE)
+
+
 def enviar(para: str, asunto: str, cuerpo: str) -> dict:
     """Manda un correo. En simulacion no manda nada y lo dice.
 
@@ -116,7 +171,11 @@ def enviar(para: str, asunto: str, cuerpo: str) -> dict:
     msg["To"] = para
     msg["From"] = remitente
     msg["Subject"] = asunto
-    msg.set_content(cuerpo)
+    # Las dos versiones: texto plano sin los simbolos del markdown, y HTML con
+    # el formato de verdad. El cliente de correo elige; si solo soporta texto,
+    # ve el limpio y no los `**`.
+    msg.set_content(_a_texto(cuerpo))
+    msg.add_alternative(_a_html(cuerpo), subtype="html")
 
     crudo = base64.urlsafe_b64encode(msg.as_bytes()).decode()
     try:
