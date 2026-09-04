@@ -192,8 +192,18 @@ def _invitar_al_iq(monitor: dict, c: dict) -> None:
       loguea y el proximo ciclo reintenta, porque sin `iq_invited_at` la
       condicion sigue dando verdadera.
     """
-    if c.get("iq_invited_at"):
+    # Se relee de la base en vez de confiar en el dict que llego. Defensa en
+    # profundidad: la primera version leia `iq_invited_at` del dict, y la
+    # consulta que armaba ese dict no traia el campo -- asi que el candidato
+    # figuraba sin invitar SIEMPRE y recibio un correo por minuto durante horas.
+    # Que la decision de escribirle a una persona dependa de que una consulta
+    # ajena incluya el campo correcto es una trampa que no se puede volver a
+    # poner: aca se pregunta a la fuente de verdad.
+    fresco = db.get_candidate(c["id"]) or c
+    if fresco.get("iq_invited_at"):
+        c["iq_invited_at"] = fresco["iq_invited_at"]
         return
+
     if not settings.IQ_INVITACION_ACTIVA:
         # A proposito NO se marca `iq_invited_at`: cuando se prenda el
         # interruptor, los aprobados de mientras reciben su invitacion sin que
@@ -203,8 +213,9 @@ def _invitar_al_iq(monitor: dict, c: dict) -> None:
             "(IQ_INVITACION_ACTIVA). Queda pendiente."
         )
         return
-    email = (c.get("email") or "").strip()
-    nombre = (c.get("name") or "").strip()
+
+    email = (fresco.get("email") or "").strip()
+    nombre = (fresco.get("name") or "").strip()
     if not email:
         log.warning(f"{nombre or 'sin nombre'} aprobado pero sin mail: no se puede invitar")
         return
@@ -214,7 +225,10 @@ def _invitar_al_iq(monitor: dict, c: dict) -> None:
         log.error("Falta DASHBOARD_URL: no se puede armar el link de la sesion")
         return
 
-    token = c.get("iq_session_token")
+    # El token sale de la base, nunca del dict. Regenerarlo invalida el link que
+    # el candidato ya tiene en su bandeja: eso fue lo que hizo que, de los
+    # cientos de correos que recibio, ninguno funcionara salvo el ultimo.
+    token = fresco.get("iq_session_token")
     if not token:
         token = secrets.token_urlsafe(32)
         try:

@@ -725,6 +725,13 @@ def list_candidates_gate_state(monitor_id: str) -> list[dict]:
         "id,sheet_row,name,email,video_url,error_message,"
         "written_status,written_score,video_status,video_score,"
         "iq_status,iq_score,iq_breakdown,iq_source_file_id,"
+        # `iq_invited_at`, `iq_session_token` e `iq_slot_at` NO son opcionales:
+        # el ciclo de gates decide con ellos si mandar la invitacion y con que
+        # link. Cuando faltaban, `c.get(...)` devolvia None siempre -- el
+        # candidato figuraba "sin invitar" en cada ciclo y recibio un correo por
+        # minuto, cada uno con un token nuevo que invalidaba el anterior.
+        # Un campo que la logica lee y la consulta no trae es un bug silencioso.
+        "iq_invited_at,iq_session_token,iq_slot_at,"
         "gate1_pass,gate1_decision,gate1_notified_at,gate2_pass"
     )
     db = get_db()
